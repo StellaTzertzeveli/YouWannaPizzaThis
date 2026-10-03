@@ -1,5 +1,4 @@
-"""Command format for Task 4 (Player Interaction and Game Control).
-
+"""
 A command is the "message" that the seeing part (Track A: zones, detectors,
 players) sends to the rules part (Track B: GameState).
 
