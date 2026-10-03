@@ -40,7 +40,7 @@ import cv2
 import mediapipe as mp
 
 from commands import CHEF, SOUS_CHEF
-from player_signals.zones import FRAME_WIDTH, prepare_frame, zone_at, ZONE_RECTS
+from zones import FRAME_WIDTH, prepare_frame, zone_at, ZONE_RECTS, DISPLAY_RECTS
 
 # Player IDs (as in the meeting notes: Player 1 = Chef, Player 2 = Sous Chef)
 CHEF_ID = 1
@@ -135,20 +135,42 @@ class FakeInput:
 #   python fake_input.py      (press q to quit)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    cap = cv2.VideoCapture(0)
+    # 0 = the first camera Windows finds. If you see a black picture,
+    # try 1 (e.g. when a laptop has an extra infrared camera for Windows Hello).
+    CAMERA_INDEX = 0
+
+    # cv2.CAP_DSHOW = use Windows' DirectShow camera driver. It often works
+    # when the default driver gives a black picture. (On Mac/Linux, remove it.)
+    cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
     tracker = FakeInput()
+    warned = False
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
+            print("No picture from the camera. Is another app (Teams, Zoom...) using it?")
             break
+
+        # frame.mean() = the average brightness of all pixels (0 = black, 255 = white)
+        if frame.mean() < 5 and not warned:
+            print("The camera picture is almost black: check the privacy shutter,")
+            print("camera permissions, or try CAMERA_INDEX = 1.")
+            warned = True
 
         frame = prepare_frame(frame)          # mirror + resize, always first
         players = tracker.read(frame)
 
-        # Zones in yellow, and the line where the picture is cut in two
-        for (x1, y1, x2, y2) in ZONE_RECTS.values():
+        # Hand zones in yellow, display areas in blue, both with their names
+        for name, (x1, y1, x2, y2) in ZONE_RECTS.items():
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 200, 255), 2)
+            cv2.putText(frame, name, (x1 + 5, y1 + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        for name, (x1, y1, x2, y2) in DISPLAY_RECTS.items():
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 180, 0), 2)
+            cv2.putText(frame, name.replace("_display", ""), (x1 + 5, y1 + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+
+        # The line where the picture is cut in two
         cv2.line(frame, (HALF, 0), (HALF, frame.shape[0]), (255, 255, 255), 1)
 
         for player in players:

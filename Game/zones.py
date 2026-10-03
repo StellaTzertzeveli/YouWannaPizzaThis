@@ -137,15 +137,130 @@ BOX_INGREDIENT = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Zone: one rectangle with a name
+# ---------------------------------------------------------------------------
+class Zone:
+    """A named rectangle a hand can be inside of.
+
+    Example:
+        oven = Zone("oven", (1150, 200, 1280, 520))
+        oven.contains((1200, 300))  -> True
+    """
+
+    def __init__(self, name, rect):
+        self.name = name
+        self.x1, self.y1, self.x2, self.y2 = rect
+
+    def contains(self, point):
+        """True if point (x, y) lies inside this zone."""
+        x, y = point
+        return self.x1 <= x < self.x2 and self.y1 <= y < self.y2
+
+
+# All 9 hand zones as Zone objects, built from the shared dictionary
+ZONES = [Zone(name, rect) for name, rect in ZONE_RECTS.items()]
+
+
 def zone_at(x, y):
     """Return the name of the zone that contains point (x, y), or None.
 
     Example: zone_at(200, 50) -> "box_cheese"
     """
-    for name, (x1, y1, x2, y2) in ZONE_RECTS.items():
-        if x1 <= x < x2 and y1 <= y < y2:
-            return name
+    for zone in ZONES:
+        if zone.contains((x, y)):
+            return zone.name
     return None
+
+
+# ---------------------------------------------------------------------------
+# DwellTimer: "hold your hand in a zone for 1 second"
+# ---------------------------------------------------------------------------
+HOLD_SECONDS = 1.0
+
+
+class DwellTimer:
+    """Fires ONCE when a hand has stayed in the same zone for HOLD_SECONDS.
+
+    Use one DwellTimer per hand per player, so nobody shares a timer.
+    Each frame, tell it which zone the hand is in (or None):
+
+        timer = DwellTimer()
+        fired = timer.update("box_cheese", now)
+        if fired:                      # "box_cheese", exactly once
+            ...make a GRAB command...
+
+    After firing it waits until the hand LEAVES the zone, so keeping your
+    hand in the box does not grab again and again.
+    """
+
+    def __init__(self, hold_seconds=HOLD_SECONDS):
+        self.hold_seconds = hold_seconds
+        self.zone = None          # the zone the hand is in right now
+        self.start_time = None    # when the hand entered that zone
+        self.fired = False        # already fired for this visit?
+
+    def update(self, zone, now):
+        """zone: zone name or None. now: time in seconds (time.monotonic()).
+
+        Returns the zone name on the one frame the hold completes, else None.
+        """
+        if zone != self.zone:              # entered a new zone, or left one
+            self.zone = zone
+            self.start_time = now
+            self.fired = False
+            return None
+
+        if zone is None or self.fired:     # not in a zone, or already done
+            return None
+
+        if now - self.start_time >= self.hold_seconds:
+            self.fired = True
+            return zone
+
+        return None
+
+    def progress(self, now):
+        """How far the hold is, from 0.0 (just entered) to 1.0 (done).
+
+        Use it to draw the hold bar.
+        """
+        if self.zone is None:
+            return 0.0
+        if self.fired:
+            return 1.0
+        return min((now - self.start_time) / self.hold_seconds, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Cooldown: "not again until X seconds have passed"
+# ---------------------------------------------------------------------------
+class Cooldown:
+    """Blocks an action from firing again too soon.
+
+        chop_cooldown = Cooldown(0.3)
+        if chop_cooldown.ready(now):
+            chop_cooldown.trigger(now)
+            ...do the chop...
+    """
+
+    def __init__(self, seconds):
+        self.seconds = seconds
+        self.last_time = None     # None = never triggered, so ready at once
+
+    def ready(self, now):
+        """True if enough time has passed since the last trigger."""
+        return self.last_time is None or now - self.last_time >= self.seconds
+
+    def trigger(self, now):
+        """Remember that the action just happened."""
+        self.last_time = now
+
+    def remaining(self, now):
+        """Seconds left until ready again (0.0 if ready). For ability icons."""
+        if self.ready(now):
+            return 0.0
+        return self.seconds - (now - self.last_time)
 
 
 # ---------------------------------------------------------------------------
