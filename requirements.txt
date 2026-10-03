@@ -1,0 +1,16 @@
+# Task 4 (Player Interaction and Game Control) - Python packages
+# Install everything with:  pip install -r requirements.txt
+# Python version: 3.12 (NOT 3.13 - mediapipe 0.10.21 has no files for 3.13)
+
+# Video loop, webcam, drawing feedback (hold bars, oven indicator) on frames.
+# "contrib" is the full OpenCV build; mediapipe 0.10.21 installs it anyway,
+# so we use it instead of opencv-python to avoid two conflicting copies of cv2.
+opencv-contrib-python
+
+# Pose keypoints for testing, hand landmarks and the gesture recognizer (thumbs up).
+# Pinned as agreed in the 01/10 meeting.
+mediapipe==0.10.21
+
+# Maths on keypoint positions (distances, averages, arrays).
+# No version pinned: pip picks one that matches mediapipe.
+numpy
