@@ -13,4 +13,11 @@ mediapipe==0.10.21
 
 # Maths on keypoint positions (distances, averages, arrays).
 # No version pinned: pip picks one that matches mediapipe.
-numpy
+numpy~=2.5.3
+
+opencv-python~=5.0.0.93
+
+
+# Task idk - face filters/ AR filters
+#for rendering 3D objects as face filters
+pillow~=11.1.0
