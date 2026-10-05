@@ -25,11 +25,94 @@ HATS = [
     },
 ]
 
-# These values are initial fit adjustments in the approximate face-model units.
-# Adjust them if the hat is too high, low, close, or far from the forehead.
-HAT_WIDTH = 190.0
-HAT_OFFSET = np.array([0.0, 70.0, -10.0])
+REACTION_PNG_PATHS = {
+    "angry": "reactions/eyebrows.png",
+    "sad": "reactions/tears.png",
+}
 
+REACTION_CYCLE = [None, "angry", "sad"]
+player_reactions = [None, None]
+
+HAT_WIDTH = 190.0
+HAT_OFFSET = np.array([0.0, 70.0, -80.0])
+
+def load_reaction_png(path):
+    image = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    if image.ndim == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGRA)
+    elif image.shape[2] == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2BGRA)
+    return image
+
+def overlay_png(frame, png, center, target_width, roll_degrees=0.0):
+    target_width = int(round(target_width))
+    if target_width <= 0:
+        return
+
+    source_h, source_w = png.shape[:2]
+    target_height = max(1, int(round(source_h * target_width / source_w)))
+    resized = cv2.resize(png, (int(target_width), target_height))
+
+    #rotate the PNG with the face
+    matrix = cv2.getRotationMatrix2D( (target_width / 2.0, target_height / 2.0), -roll_degrees,1.0,)
+    rotated = cv2.warpAffine(resized,matrix,(target_width, target_height),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_CONSTANT,borderValue=(0, 0, 0, 0))
+
+    frame_h, frame_w = frame.shape[:2]
+    center_x, center_y = (int(round(value)) for value in center)
+    x0 = center_x - target_width // 2
+    y0 = center_y - target_height // 2
+    x1 = x0 + target_width
+    y1 = y0 + target_height
+
+    #clip overlay to visible
+    visible_x0 = max(0, x0)
+    visible_y0 = max(0, y0)
+    visible_x1 = min(frame_w, x1)
+    visible_y1 = min(frame_h, y1)
+
+    if visible_x0 >= visible_x1 or visible_y0 >= visible_y1:
+        return
+
+    overlay = rotated[int(visible_y0 - y0):int(visible_y1 - y0),
+              int(visible_x0 - x0):int(visible_x1 - x0)]
+
+    roi = frame[visible_y0:visible_y1, visible_x0:visible_x1]
+    alpha = overlay[:, :, 3:4].astype(np.float32) / 255.0
+    roi[:] = (
+        overlay[:, :, :3].astype(np.float32) * alpha
+        + roi.astype(np.float32) * (1.0 - alpha)
+    ).astype(np.uint8)
+
+
+def draw_face_reaction(frame, face, reaction, reaction_images, width, height):
+    def point(index):
+        landmark = face.landmark[index]
+        return np.array([landmark.x * width, landmark.y * height])
+
+    eye_left = point(33)
+    eye_right = point(263)
+    eye_center = (eye_left + eye_right) / 2.0
+    roll = degrees(np.atan2(
+        eye_right[1] - eye_left[1],
+        eye_right[0] - eye_left[0],
+    ))
+
+    face_left = point(234)
+    face_right = point(454)
+    face_width = np.linalg.norm(face_right - face_left)
+
+    if reaction == "angry":
+        brow_left = point(105)
+        brow_right = point(334)
+        center = (brow_left + brow_right) / 2.0
+        target_width = np.linalg.norm(brow_right - brow_left) * 1.6
+    elif reaction == "sad":
+        center = eye_center + np.array([0, face_width * 0.30])
+        target_width = face_width * 0.8
+    else:
+        return
+
+    overlay_png(frame,reaction_images[reaction],center,target_width,roll)
 
 def load_hat(obj_path, texture_path, target_width, color):
     mesh = trimesh.load(obj_path, force="mesh", process=False)
@@ -134,6 +217,9 @@ def main():
         min_tracking_confidence=0.5,
     )
 
+    reaction_images = {name: load_reaction_png(path)
+                       for name, path in REACTION_PNG_PATHS.items()}
+
     renderer = None
 
     try:
@@ -144,7 +230,6 @@ def main():
 
             height, width = frame.shape[:2]
 
-            # Approximate webcam intrinsics. Real calibration can improve alignment.
             focal_length = float(width)
             camera_matrix = np.array([
                 [focal_length, 0.0, width / 2.0],
@@ -158,11 +243,11 @@ def main():
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = face_mesh.process(rgb_frame)
 
+            faces = []
             if results.multi_face_landmarks:
                 faces = sorted(
                     results.multi_face_landmarks,
-                    key=lambda face: face.landmark[1].x,
-                )
+                    key=lambda face: face.landmark[1].x,)
 
                 scene = pyrender.Scene(
                     bg_color=[0.0, 0.0, 0.0, 0.0],
@@ -219,9 +304,24 @@ def main():
                             + frame.astype(np.float32) * (1.0 - alpha)
                     ).astype(np.uint8)
 
+            for player_index, face in enumerate(faces[:2]):
+                reaction = player_reactions[player_index]
+                if reaction is not None:
+                    draw_face_reaction(frame, face, reaction, reaction_images, width, height
+
+                    )
+
             cv2.imshow("3D face filter - press q to quit", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
                 break
+
+            elif key in (ord('1'), ord('2')):
+                player_index = key - ord('1')
+                current = player_reactions[player_index]
+                next_index = (REACTION_CYCLE.index(current) + 1) % len(REACTION_CYCLE)
+                player_reactions[player_index] = REACTION_CYCLE[next_index]
+                print(f"Player {player_index + 1}: {player_reactions[player_index] or 'no reaction'}")
 
     finally:
         camera.release()
