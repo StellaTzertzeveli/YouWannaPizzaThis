@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 # SETTINGS for the objects
 # =====================================================================
 TOPPINGS = ["cheese", "pepperoni", "mushrooms", "peppers"]
-CHOP_STRIKES = 5             # TBD: strikes needed to chop one ingredient
+CHOP_STRIKES = 6             # TBD: strikes to chop one ingredient (images: raw, cut_1..cut_5, sliced)
 BAKE_TIME = 5.0              # seconds in the oven until baked
 BURN_TIME = 10.0             # seconds in the oven until burnt
 BANK_CAPACITY = 4            # TBD: max items on the bank
@@ -28,6 +28,16 @@ class Ingredient:
     def __post_init__(self):
         if self.type not in TOPPINGS:
             raise ValueError(f"unknown ingredient: {self.type}")
+
+    @property
+    def image_name(self):
+        """Name of the PNG for this ingredient right now (without .png):
+        cheese_raw -> cheese_cut_1 ... cheese_cut_5 -> cheese_sliced"""
+        if self.state == "chopped":
+            return f"{self.type}_sliced"
+        if self.strikes == 0:
+            return f"{self.type}_raw"
+        return f"{self.type}_cut_{min(self.strikes, CHOP_STRIKES - 1)}"
 
     def __str__(self):
         if self.state == "raw":
@@ -156,6 +166,16 @@ if __name__ == "__main__":
     assert oven.update(9.9) == []
     assert oven.update(10.0) == ["burnt"] and pz.stage == "burnt"
     print("Oven: baked at 5 s, burnt at 10 s OK")
+
+    ing = Ingredient("cheese")
+    assert ing.image_name == "cheese_raw"
+    ing.strikes = 1
+    assert ing.image_name == "cheese_cut_1"
+    ing.strikes = 5
+    assert ing.image_name == "cheese_cut_5"
+    ing.state = "chopped"
+    assert ing.image_name == "cheese_sliced"
+    print("Ingredient.image_name OK (raw -> cut_1..cut_5 -> sliced)")
 
     bank = Bank(max_items=2)
     a, b, c = Ingredient("cheese"), Ingredient("peppers"), Ingredient("mushrooms")
