@@ -10,7 +10,7 @@ app = FaceAnalysis(
 )
 app.prepare(ctx_id=0, det_size=(320, 320))
 
-cap = cv2.VideoCapture("YouWannaPizzaThis\\Task_4\\Singluar_Face_Tracking.mp4")
+cap = cv2.VideoCapture(0)
 fps = int(round(cap.get(5)))
 frame_width = int(cap.get(3))
 frame_height = int(cap.get(4))
