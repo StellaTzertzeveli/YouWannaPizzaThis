@@ -1,7 +1,9 @@
 import cv2
+import numpy as np
 class ActionDetector:
     def __init__(self):
         self.history = []
+        self.vector_history = []
         self.mp_dict = {}
         self.max_value = -99
         pass
@@ -19,12 +21,20 @@ class ActionDetector:
 
     def update_history(self, limb):
         result_dict = {}
+        vectors = {}
         for idx, limb_str in self.mp_dict.items():
             body_part = limb[idx]
-            result_dict[limb_str] = self.body_part_to_coords(body_part)
+            coords = self.body_part_to_coords(body_part)
+            result_dict[limb_str] = coords
+            vector = np.array((coords[0], coords[1]))
+            vectors[limb_str] = vector
+
         self.history.append(result_dict)
+        self.vector_history.append(vectors)
+
         if len(self.history) > 60:
             self.history.pop(0)
+            self.vector_history.pop(0)
 
     def body_part_to_coords(self, part):
         return part.x, part.y, part.z
