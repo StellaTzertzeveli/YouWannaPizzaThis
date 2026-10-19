@@ -1,4 +1,85 @@
-#superclass for all detection classes
+import cv2
 class ActionDetector:
-    def __init__(self, camera):
+    def __init__(self):
+        self.history = []
+        self.mp_dict = {}
+        self.max_value = -99
         pass
+
+    def update(self, new_mp, should_print=False):
+        self.update_history(new_mp)
+        if len(self.history) >= 60:
+            self.update_state(should_print)
+
+    def update_state(self, should_print):
+        raise NotImplementedError("Subclass must implement update_state")
+
+    def get_display_value(self):
+        raise NotImplementedError("Subclass must implement")
+
+    def update_history(self, limb):
+        result_dict = {}
+        for idx, limb_str in self.mp_dict.items():
+            body_part = limb[idx]
+            result_dict[limb_str] = self.body_part_to_coords(body_part)
+        self.history.append(result_dict)
+        if len(self.history) > 60:
+            self.history.pop(0)
+
+    def body_part_to_coords(self, part):
+        return part.x, part.y, part.z
+
+    def display_bar_graph(self, frame):
+        value = self.get_display_value()
+        h, w, _ = frame.shape
+        # Position and size
+        x = 50
+        y = 50
+        bar_width = 300
+        bar_height = 30
+
+        # Clamp value
+        value = max(0, min(value, self.max_value))
+
+        # Calculate filled width
+        fill_width = int((value / self.max_value) * bar_width)
+
+        # Background
+        cv2.rectangle(
+            frame,
+            (x, y),
+            (x + bar_width, y + bar_height),
+            (50, 50, 50),
+            -1
+        )
+
+        # Filled portion
+        cv2.rectangle(
+            frame,
+            (x, y),
+            (x + fill_width, y + bar_height),
+            (0, 255, 0),
+            -1
+        )
+
+        # Border
+        cv2.rectangle(
+            frame,
+            (x, y),
+            (x + bar_width, y + bar_height),
+            (255, 255, 255),
+            2
+        )
+
+        # Value text
+        cv2.putText(
+            frame,
+            f"{value}/{self.max_value}",
+            (x + bar_width + 15, y + 23),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2
+        )
+
+        return frame
