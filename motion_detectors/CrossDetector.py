@@ -16,16 +16,16 @@ class CrossDetector(ActionDetector):
 
 
     def update_state(self, should_print):
-        frame = self.history[-1]
+        vectors = self.vector_history[-1]
 
         for limb_str in self.mp_dict.values():
-            if not limb_str in frame.keys():
+            if not limb_str in vectors.keys():
                 return
         #create a vector for each arm
-        left_elb = np.array((frame['LEFT ELBOW'][0], frame['LEFT ELBOW'][1]))
-        right_elb = np.array((frame['RIGHT ELBOW'][0], frame['RIGHT ELBOW'][1]))
-        left_wrist = np.array((frame['LEFT WRIST'][0], frame['LEFT WRIST'][1]))
-        right_wrist = np.array((frame['RIGHT WRIST'][0], frame['RIGHT WRIST'][1]))
+        left_elb = vectors['LEFT ELBOW']
+        right_elb = vectors['RIGHT ELBOW']
+        left_wrist = vectors['LEFT WRIST']
+        right_wrist = vectors['RIGHT WRIST']
 
         left_arm = left_wrist - left_elb
         right_arm = right_wrist - right_elb

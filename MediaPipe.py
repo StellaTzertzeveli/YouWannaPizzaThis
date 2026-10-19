@@ -6,6 +6,7 @@ from mediapipe.tasks.python import vision
 
 import motion_detectors.ChopDetector as ChopDetector
 import motion_detectors.CrossDetector as CrossDetector
+import motion_detectors.GrabDetector as GrabDetector
 
 display_pose = False
 chop_amount = 0
@@ -59,6 +60,7 @@ pose_landmarker = vision.PoseLandmarker.create_from_options(
 cap = cv2.VideoCapture(0)
 chopDetector = ChopDetector.ChopDetector()
 crossDetector = CrossDetector.CrossDetector()
+grabDetector = GrabDetector.GrabDetector('loose')
 latest_hand_result = None
 latest_pose_result = None
 while cap.isOpened():
@@ -87,17 +89,18 @@ while cap.isOpened():
         mp_image,
         frame_timestamp_ms
     )
-    # HAND RESULTS
-    # if latest_hand_result is not None:
-    #     for hand in latest_hand_result.hand_landmarks:
-    #         chopDetector.update(hand)
+    #HAND RESULTS
+    if latest_hand_result is not None:
+        for hand in latest_hand_result.hand_landmarks:
+            # chopDetector.update(hand)
+            grabDetector.update(hand, should_print=True)
 
-    if latest_pose_result is not None:
-        for body in latest_pose_result.pose_landmarks:
-            crossDetector.update(body, should_print=True)
+    # if latest_pose_result is not None:
+    #     for body in latest_pose_result.pose_landmarks:
+    #         crossDetector.update(body, should_print=True)
 
     # E. Display Camera Feed
-    frame = crossDetector.display_bar_graph(frame)
+    frame = grabDetector.display_bar_graph(frame)
     cv2.imshow("MediaPipe Pose Tracking", frame)
 
     # Exit loop if 'q' is pressed
