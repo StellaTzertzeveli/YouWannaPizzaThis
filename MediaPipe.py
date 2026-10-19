@@ -5,6 +5,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 import motion_detectors.ChopDetector as ChopDetector
+import motion_detectors.CrossDetector as CrossDetector
 
 display_pose = False
 chop_amount = 0
@@ -57,6 +58,7 @@ pose_landmarker = vision.PoseLandmarker.create_from_options(
 # 4. Open Webcam Capture
 cap = cv2.VideoCapture(0)
 chopDetector = ChopDetector.ChopDetector()
+crossDetector = CrossDetector.CrossDetector()
 latest_hand_result = None
 latest_pose_result = None
 while cap.isOpened():
@@ -86,45 +88,16 @@ while cap.isOpened():
         frame_timestamp_ms
     )
     # HAND RESULTS
-    if latest_hand_result is not None:
-        for hand in latest_hand_result.hand_landmarks:
-            chopDetector.update(hand)
+    # if latest_hand_result is not None:
+    #     for hand in latest_hand_result.hand_landmarks:
+    #         chopDetector.update(hand)
 
-
-    # D. Process Detected Body Landmarks (Right Wrist Index = 16)
-    # if latest_pose_result is not None:
-    #     if len(latest_pose_result.pose_landmarks) > 0:
-    #
-    #         landmarks = latest_pose_result.pose_landmarks[0]
-    #
-    #         h, w, _ = frame.shape
-    #
-    #         for limb_str, limb_idx in LIMB_INDICES.items():
-    #             limb = landmarks[limb_idx]
-    #
-    #             cx = int(limb.x * w)
-    #             cy = int(limb.y * h)
-    #             if display_pose:
-    #                 cv2.circle(
-    #                     frame,
-    #                     (cx, cy),
-    #                     15,
-    #                     (0, 255, 0),
-    #                     -1
-    #                 )
-    #
-    #                 cv2.putText(
-    #                     frame,
-    #                     f"{limb_str}: ({cx}, {cy})",
-    #                     (cx + 20, cy),
-    #                     cv2.FONT_HERSHEY_SIMPLEX,
-    #                     0.6,
-    #                     (0, 255, 0),
-    #                     2
-    #                 )
+    if latest_pose_result is not None:
+        for body in latest_pose_result.pose_landmarks:
+            crossDetector.update(body, should_print=True)
 
     # E. Display Camera Feed
-    frame = chopDetector.display_bar_graph(frame)
+    frame = crossDetector.display_bar_graph(frame)
     cv2.imshow("MediaPipe Pose Tracking", frame)
 
     # Exit loop if 'q' is pressed
