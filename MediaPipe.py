@@ -60,7 +60,7 @@ pose_landmarker = vision.PoseLandmarker.create_from_options(
 cap = cv2.VideoCapture(0)
 chopDetector = ChopDetector.ChopDetector()
 crossDetector = CrossDetector.CrossDetector()
-grabDetector = GrabDetector.GrabDetector('loose')
+grabDetector = GrabDetector.GrabDetector('grab')
 latest_hand_result = None
 latest_pose_result = None
 while cap.isOpened():
@@ -93,14 +93,16 @@ while cap.isOpened():
     if latest_hand_result is not None:
         for hand in latest_hand_result.hand_landmarks:
             # chopDetector.update(hand)
-            grabDetector.update(hand, should_print=True)
+            # grabDetector.update(hand, should_print=True)
+            pass
+        # frame = grabDetector.display_bar_graph(frame)
 
-    # if latest_pose_result is not None:
-    #     for body in latest_pose_result.pose_landmarks:
-    #         crossDetector.update(body, should_print=True)
+    if latest_pose_result is not None:
+        for body in latest_pose_result.pose_landmarks:
+            crossDetector.update(body, should_print=True)
+        frame = crossDetector.display_bar_graph(frame)
 
     # E. Display Camera Feed
-    frame = grabDetector.display_bar_graph(frame)
     cv2.imshow("MediaPipe Pose Tracking", frame)
 
     # Exit loop if 'q' is pressed
