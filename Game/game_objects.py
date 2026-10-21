@@ -1,6 +1,6 @@
 """
-Game objects for Pizza Kitchen: Ingredient, Pizza, Order, Oven, Bank.
-No game rules in here (who may do what) - that lives in game_state.py.
+Game objects for Pizza Kitchen: Ingredient, Pizza, Order, Oven, Bank, and the two Player classes.
+No game rules in here (who may do what in a given situation) - that lives in game_state.py.
 Run this file directly to check the objects on their own.
 """
 import random
@@ -10,12 +10,54 @@ from dataclasses import dataclass, field
 # SETTINGS for the objects
 # =====================================================================
 TOPPINGS = ["cheese", "pepperoni", "mushrooms", "peppers"]
-CHOP_STRIKES = 6             # TBD: strikes to chop one ingredient (images: raw, cut_1..cut_5, sliced)
+CHOP_STRIKES = 4             # TBD: strikes to chop one ingredient (images: raw, cut_1..cut_5, sliced)
 BAKE_TIME = 5.0              # seconds in the oven until baked
 BURN_TIME = 10.0             # seconds in the oven until burnt
 BANK_CAPACITY = 4            # TBD: max items on the bank
 
 PIZZA_STAGES = ["dough", "spun", "sauced", "topped", "baking", "baked", "burnt"]
+
+# Default player ids (the final game may use different ids - nothing else depends on these numbers)
+CHEF = 1
+SOUS_CHEF = 2
+
+
+# =====================================================================
+# PLAYERS
+# GameState only needs a player to have:  .id  .role_key  .holding  .visible  .can(action)
+# If the final game already has its own player classes, either subclass Chef / SousChef
+# or give your classes those five things.
+# =====================================================================
+class Player:
+    role_key = ""            # "chef" or "sous_chef" (abilities check this, not the id)
+    role_name = ""           # for messages
+    allowed_actions = frozenset()
+
+    def __init__(self, player_id):
+        self.id = player_id
+        self.holding = None      # one item at a time (Ingredient or Pizza)
+        self.visible = True      # False = lost from camera frame (actions paused)
+
+    def can(self, action):
+        return action in self.allowed_actions
+
+    def __repr__(self):
+        return f"{self.role_name}(id={self.id}, holding={self.holding})"
+
+
+class Chef(Player):
+    role_key = "chef"
+    role_name = "Chef"
+    allowed_actions = frozenset({
+        "spin_dough", "place_at_station", "add_topping", "oven_in", "oven_out",
+        "take_from_bank", "place_on_bank", "ability"})
+
+
+class SousChef(Player):
+    role_key = "sous_chef"
+    role_name = "Sous Chef"
+    allowed_actions = frozenset({
+        "grab_raw", "chop", "pass_to_bank", "take_pizza_from_bank", "deliver", "ability"})
 
 
 # =====================================================================
@@ -171,15 +213,21 @@ if __name__ == "__main__":
     assert ing.image_name == "cheese_raw"
     ing.strikes = 1
     assert ing.image_name == "cheese_cut_1"
-    ing.strikes = 5
-    assert ing.image_name == "cheese_cut_5"
+    ing.strikes = 3
+    assert ing.image_name == "cheese_cut_3"
     ing.state = "chopped"
     assert ing.image_name == "cheese_sliced"
-    print("Ingredient.image_name OK (raw -> cut_1..cut_5 -> sliced)")
+    print("Ingredient.image_name OK (raw -> cut_1..cut_3 -> sliced)")
 
     bank = Bank(max_items=2)
     a, b, c = Ingredient("cheese"), Ingredient("peppers"), Ingredient("mushrooms")
     assert bank.put(a) and bank.put(b) and not bank.put(c)
     assert bank.take(a) and not bank.take(a) and bank.put(c)
     print("Bank: put/take/max items OK")
+
+    chef, sous = Chef(CHEF), SousChef(SOUS_CHEF)
+    assert chef.can("oven_in") and not chef.can("chop")
+    assert sous.can("chop") and not sous.can("oven_in")
+    assert chef.can("ability") and sous.can("ability")
+    print("Players: Chef / SousChef allowed actions OK")
     print("ALL OBJECT CHECKS PASSED")
