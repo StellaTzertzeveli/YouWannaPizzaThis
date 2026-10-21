@@ -20,7 +20,7 @@ HATS = [
         "obj": "3D_models/Ushanka.obj",
         "texture": None,
         "width": 190.0,
-        "offset": [0.0, 70.0, -60.0],
+        "offset": [0.0, 70.0, -70.0],
         "color": [0.25, 0.45, 0.9, 1.0],
     },
 ]
