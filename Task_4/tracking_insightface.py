@@ -1,5 +1,6 @@
 import cv2
 from insightface.app import FaceAnalysis
+import numpy as np
 
 app = FaceAnalysis(
     name="buffalo_l",
@@ -19,14 +20,35 @@ frame_count = 0
 
 faces = []
 
+prev_face = []
+
 while cap.isOpened():
     ret, frame = cap.read()
     
     if not ret:  
         break
         
-    if frame_count == 0:
+    if frame_count == 0:             
         faces = app.get(frame)
+        
+        if len(faces) == 0:
+            continue
+        
+        for i, face in enumerate(faces):
+            embedding = face.embedding
+            
+            if len(prev_face) == 0:
+                prev_face = embedding
+                continue
+            
+            curr_embedding = np.asarray(embedding, np.float32)
+            prev_embedding = np.asarray(prev_face, np.float32)
+            
+            cosine_similarity = np.dot(curr_embedding,prev_embedding) / (np.linalg.norm(curr_embedding) * np.linalg.norm(prev_embedding))
+            
+            if cosine_similarity <= 0.3:
+                print("New Face!")
+                print(cosine_similarity)
         frame_count +=1
     
     frame_count += 1
