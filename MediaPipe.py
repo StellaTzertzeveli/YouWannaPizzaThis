@@ -12,7 +12,6 @@ import motion_detectors.ThumbsupDetector as ThumbsupDetector
 display_pose = False
 chop_amount = 0
 hand_results = []
-LIMB_INDICES = {15: 'left wrist', 16: 'right wrist'}
 
 def hand_callback(result, output_image, timestamp_ms):
     global latest_hand_result
