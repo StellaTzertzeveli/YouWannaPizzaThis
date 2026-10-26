@@ -17,6 +17,11 @@ class GrabDetector(ActionDetector):
             raise ValueError(f'Unknown detection type {detection_type} in GrabDetector, should be grabbing or loose')
         self.detection_type = detection_type
 
+    def stop_detection(self):
+        self.counter = 0
+        self.state = False
+
+
     def update_state(self, should_print):
         vectors = self.vector_history[-1]
 

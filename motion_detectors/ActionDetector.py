@@ -6,12 +6,19 @@ class ActionDetector:
         self.vector_history = []
         self.mp_dict = {}
         self.max_value = -99
+        self.should_detect = False
         pass
 
     def update(self, new_mp, should_print=False):
         self.update_history(new_mp)
-        if len(self.history) >= 60:
+        if len(self.history) >= 60 and self.should_detect:
             self.update_state(should_print)
+
+    def start_detection(self):
+        self.should_detect = True
+
+    def stop_detection(self):
+        raise NotImplementedError("Subclass must implement update_state")
 
     def update_state(self, should_print):
         raise NotImplementedError("Subclass must implement update_state")

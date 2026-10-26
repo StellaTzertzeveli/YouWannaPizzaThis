@@ -14,6 +14,11 @@ class CrossDetector(ActionDetector):
         self.cross_frames = 0 #The consecutive amount of frames where the player had the X input
         self.max_value = 60
 
+    def stop_detection(self):
+        self.should_detect = False
+        self.counter = 0
+        self.state = False
+        self.cross_frames = 0
 
     def update_state(self, should_print):
         vectors = self.vector_history[-1]

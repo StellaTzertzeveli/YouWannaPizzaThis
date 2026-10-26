@@ -9,18 +9,23 @@ class ChopDetector(ActionDetector):
         self.mp_dict = {0: 'wrist', 8: 'index_tip', 12: 'middle_tip', 16: 'ring_tip', 20: 'pinky_tip'}
 
         self.state = self.LIFTING_UPWARDS
-        self.chop_count = 0
+        self.count = 0
 
         self.max_value = 30 #for bar graph
 
     def get_chop_count(self):
-        return self.chop_count
+        return self.count
 
     def get_display_value(self):
         return self.get_chop_count()
 
     def reset_chop_count(self):
-        self.chop_count = 0
+        self.count = 0
+
+    def stop_detection(self):
+        self.should_detect = False
+        self.count = 0
+        self.state = self.LIFTING_UPWARDS
 
     def update_history(self, hand):
         super().update_history(hand)
@@ -28,6 +33,7 @@ class ChopDetector(ActionDetector):
 
     def update_state(self, should_print):
         #Here we check if the state of the detector should be changed!
+        print('calculating state for ChopDetector')
         sum_hand_history = [
             tuple(
                 sum(coords[i] for coords in (frame[finger_str] for finger_str in self.mp_dict.values())) / 5
@@ -56,7 +62,7 @@ class ChopDetector(ActionDetector):
             elif self.state == self.CHOPPING_DOWNWARDS:
                 if dy <= 0:
                     self.state = self.CHOPPED
-                    self.chop_count += 1
+                    self.count += 1
                     latest_result = self.history[-1]
                     latest_result['is_chop_frame'] = True
                     break

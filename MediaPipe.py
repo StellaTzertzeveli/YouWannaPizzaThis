@@ -92,16 +92,18 @@ while cap.isOpened():
     #HAND RESULTS
     if latest_hand_result is not None:
         for hand in latest_hand_result.hand_landmarks:
-            # chopDetector.update(hand)
-            # grabDetector.update(hand, should_print=True)
+            chopDetector.update(hand)
+            grabDetector.update(hand, should_print=True)
             pass
         # frame = grabDetector.display_bar_graph(frame)
 
     if latest_pose_result is not None:
         for body in latest_pose_result.pose_landmarks:
             crossDetector.update(body, should_print=True)
-        frame = crossDetector.display_bar_graph(frame)
-
+        frame = chopDetector.display_bar_graph(frame)
+    if cv2.waitKey(1) & 0xFF == ord('v'):
+        chopDetector.start_detection()
+        print('started detection chopDetector')
     # E. Display Camera Feed
     cv2.imshow("MediaPipe Pose Tracking", frame)
 
