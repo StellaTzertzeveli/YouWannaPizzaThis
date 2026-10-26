@@ -64,7 +64,7 @@ while cap.isOpened():
         x1, y1, x2, y2 = map(int, track.to_ltrb())
         track_id = track.track_id
         
-        
+        #Check assigned IDs 
 
         cv2.rectangle(
             frame, (x1, y1), (x2, y2), (0, 255, 0), 2
