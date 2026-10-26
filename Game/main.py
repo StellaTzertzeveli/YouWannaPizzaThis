@@ -276,14 +276,17 @@ class DwellTimer:
     """
 
     def __init__(self, hold_seconds=HOLD_SECONDS):
-        self.hold_seconds = hold_seconds
+        self.hold_seconds = hold_seconds   # the default hold time
+        self.current_hold = hold_seconds   # the hold time used right now
         self.zone = None          # the zone the hand is in right now
         self.start_time = None    # when the hand entered that zone
         self.fired = False        # already fired for this visit?
 
-    def update(self, zone, now):
-        """zone: zone name or None. Returns the zone name on the one frame
-        the hold completes, otherwise None."""
+    def update(self, zone, now, hold_seconds=None):
+        """zone: zone name or None. hold_seconds: optional, to need a longer
+        (or shorter) hold this time, e.g. 2 s for sprinkling.
+        Returns the zone name on the one frame the hold completes, otherwise None."""
+        self.current_hold = hold_seconds if hold_seconds is not None else self.hold_seconds
         if zone != self.zone:              # entered a new zone, or left one
             self.zone = zone
             self.start_time = now
@@ -291,7 +294,7 @@ class DwellTimer:
             return None
         if zone is None or self.fired:
             return None
-        if now - self.start_time >= self.hold_seconds:
+        if now - self.start_time >= self.current_hold:
             self.fired = True
             return zone
         return None
@@ -302,7 +305,7 @@ class DwellTimer:
             return 0.0
         if self.fired:
             return 1.0
-        return min((now - self.start_time) / self.hold_seconds, 1.0)
+        return min((now - self.start_time) / self.current_hold, 1.0)
 
 
 class Cooldown:
@@ -885,13 +888,18 @@ class GameState:
         return self._ok("Chef took the baked pizza out")
 
     def _do_place_on_bank(self, cmd):
+        """Chef puts the baked pizza on the bank, or puts a topping back."""
         item = self.chef.holding
-        if not isinstance(item, Pizza) or item.stage != "baked":
-            return self._no("need to hold a baked pizza")
+        is_baked_pizza = isinstance(item, Pizza) and item.stage == "baked"
+        is_topping = isinstance(item, Ingredient) and item.state == "chopped"
+        if not (is_baked_pizza or is_topping):
+            return self._no("can only put a baked pizza or a chopped topping on the bank")
         if not self.bank.put(item):
             return self._no("bank is full")
         self.chef.holding = None
         self._mark_bank(cmd)
+        if is_topping:
+            return self._ok(f"Chef put {item.type} back on the bank")
         return self._ok("baked pizza put on the bank")
 
     # ---------- abilities ----------
@@ -1061,17 +1069,38 @@ def zone_to_command(player, zone, state, now):
         if zone == BOX_DOUGH:
             return make(GRAB, DOUGH)
         if zone == TOPPING_STATION:
-            return make(PLACE, DOUGH)
+            holding = state.chef.holding
+            if holding is state.pizza:                 # holding the dough: put it down
+                return make(PLACE, DOUGH)
+            if isinstance(holding, Ingredient):        # holding a topping: put it on
+                # Stand-in for the sprinkle detector: a 2 s hover (see hold_seconds_for)
+                return make(SPRINKLE_DONE, holding.type)
+            return None
         if zone == OVEN:
             if state.oven.pizza is None:
                 return make(OVEN_IN, PIZZA)
             return make(OVEN_OUT, PIZZA)
         if zone == BANK:
-            if isinstance(state.chef.holding, Pizza):
+            holding = state.chef.holding
+            if isinstance(holding, Pizza):             # baked pizza for the Sous Chef
                 return make(PASS_TO_BANK, PIZZA)
-            return make(TAKE_FROM_BANK)
+            if isinstance(holding, Ingredient):        # put a topping back
+                return make(PASS_TO_BANK, holding.type)
+            return make(TAKE_FROM_BANK)                # empty hands: take a topping
 
     return None
+
+
+SPRINKLE_SECONDS = 2.0      # hover time to add a topping (concept: "sprinkle for 2 s")
+
+
+def hold_seconds_for(player, zone, state):
+    """How long a hand must stay in this zone before it counts.
+    Normally 1 s; 2 s when the Chef hovers a topping over the pizza."""
+    if (player["role"] == CHEF and zone == TOPPING_STATION
+            and isinstance(state.chef.holding, Ingredient)):
+        return SPRINKLE_SECONDS
+    return HOLD_SECONDS
 
 
 # =====================================================================
@@ -1122,7 +1151,7 @@ WHITE = (255, 255, 255)
 ZONE_COLOUR = (0, 200, 255)
 ZONE_HINTS = {                # shown inside the zones while the detectors are missing
     CHOPPING_COUNTER: "F = chop",
-    TOPPING_STATION: "U = spin dough   O = sprinkle",
+    TOPPING_STATION: "U = spin   hover topping 2 s (or O)",
 }
 ABILITY_DISPLAYS = {          # display area: (ability name, label)
     SOUS_ABILITY_1_DISPLAY: ("knife_frenzy", "Z Knife Frenzy"),
@@ -1284,8 +1313,11 @@ def put_text(frame, text, origin, scale=0.6, colour=WHITE, thickness=1):
 
 
 def draw_item(frame, item, x, y, size):
-    """Draw an Ingredient (as its picture) or a Pizza (as a coloured circle)."""
-    x, y = max(0, int(x)), max(0, int(y))
+    """Draw an Ingredient (as its picture) or a Pizza (as a coloured circle).
+    (x, y) is the top-left corner; it is pushed back inside the frame if needed."""
+    height, width = frame.shape[:2]
+    x = min(max(0, int(x)), width - size)       # keep the whole item on screen
+    y = min(max(0, int(y)), height - size)
     if isinstance(item, Ingredient):
         sprite = load_sprite(item.image_name, size)
         if sprite is not None:
@@ -1376,8 +1408,39 @@ def draw_abilities(frame, state):
         put_text(frame, "READY" if ready else f"{cooldown:.1f}s", (x1 + 4, y1 + 50), 0.6)
 
 
-def draw_player(frame, player, state):
-    """Keypoints (green = reliable, red = unsure) and what the player holds, above the head."""
+HELD_ITEM_SIZE = 70          # size of the item drawn in a player's hand (pixels)
+PALM_OFFSET = 0.25           # how far past the wrist the palm is (fraction of the forearm)
+
+
+def hand_position(player, wrist):
+    """Estimated position of the palm for "left_wrist" or "right_wrist", or None.
+
+    MediaPipe's wrist point sits at the wrist, not in the hand. The hand
+    continues in the same direction as the forearm (elbow -> wrist), so we
+    step a bit further along that line.
+
+    Example: elbow (400, 400), wrist (400, 300)  ->  palm (400, 275)
+    """
+    keypoints = player["keypoints"]
+    wrist_point = keypoints.get(wrist)
+    if not is_reliable(wrist_point):
+        return None
+    x, y, _ = wrist_point
+    elbow = keypoints.get(wrist.replace("wrist", "elbow"))   # "left_wrist" -> "left_elbow"
+    if is_reliable(elbow):
+        ex, ey, _ = elbow
+        x += int(PALM_OFFSET * (x - ex))
+        y += int(PALM_OFFSET * (y - ey))
+    return x, y
+
+
+def draw_player(frame, player, state, holding_hand=None):
+    """Keypoints (green = reliable, red = unsure) and what the player holds, in their hand.
+
+    holding_hand: "left_wrist" or "right_wrist", the hand that grabbed the item.
+    If that hand is not visible, the other hand is used, and as a last resort
+    the item is drawn above the head.
+    """
     if not player["visible"]:
         return
     for keypoint in player["keypoints"].values():
@@ -1385,10 +1448,23 @@ def draw_player(frame, player, state):
         cv2.circle(frame, (x, y), 6, (0, 255, 0) if is_reliable(keypoint) else (0, 0, 255), -1)
 
     holding = state.players[player["player_id"]].holding
-    nose = player["keypoints"].get("nose")
-    if holding is not None and is_reliable(nose):
+    if holding is None:
+        return
+
+    first = holding_hand or "right_wrist"
+    other = "left_wrist" if first == "right_wrist" else "right_wrist"
+    half = HELD_ITEM_SIZE // 2
+    for wrist in (first, other):
+        palm = hand_position(player, wrist)
+        if palm is not None:
+            x, y = palm
+            draw_item(frame, holding, x - half, y - half, HELD_ITEM_SIZE)   # centred on the palm
+            return
+
+    nose = player["keypoints"].get("nose")       # no hand visible: show it above the head
+    if is_reliable(nose):
         x, y, _ = nose
-        draw_item(frame, holding, x - 35, y - 150, 70)
+        draw_item(frame, holding, x - half, y - 150, HELD_ITEM_SIZE)
 
 
 def draw_hold_bar(frame, x, y, progress):
@@ -1421,7 +1497,9 @@ def draw_game_over(frame, state):
     put_text(frame, "press R to play again, Q to quit", (420, 440), 0.8)
 
 
-def draw_everything(frame, players, state, hold_bars):
+def draw_everything(frame, players, state, hold_bars, holding_hands=None):
+    """holding_hands: {player_id: "left_wrist" / "right_wrist"}, which hand holds the item."""
+    holding_hands = holding_hands or {}
     draw_zones(frame)
     draw_timer(frame, state)
     draw_order(frame, state)
@@ -1430,7 +1508,7 @@ def draw_everything(frame, players, state, hold_bars):
     draw_bank(frame, state)
     draw_abilities(frame, state)
     for player in players:
-        draw_player(frame, player, state)
+        draw_player(frame, player, state, holding_hands.get(player["player_id"]))
     for x, y, progress in hold_bars:
         draw_hold_bar(frame, x, y, progress)
     draw_active_effects(frame, state)
@@ -1459,6 +1537,13 @@ def selftest():
     assert timer.update(BOX_CHEESE, 3.2) == BOX_CHEESE
     print("Zones + DwellTimer OK")
 
+    # Palm = a bit past the wrist, along the forearm
+    arm = {"keypoints": {"right_elbow": (400, 400, 0.9), "right_wrist": (400, 300, 0.9),
+                         "left_wrist": (100, 100, 0.1)}}            # left wrist unsure
+    assert hand_position(arm, "right_wrist") == (400, 275)
+    assert hand_position(arm, "left_wrist") is None
+    print("Hand position OK")
+
     # The bridge
     rule = to_rule_command(Command(player_id=SOUS_CHEF_ID, role=SOUS_CHEF, action=GRAB, item=CHEESE))
     assert rule.action == "grab_raw" and rule.arg == CHEESE
@@ -1479,6 +1564,22 @@ def selftest():
     assert zone_to_command(chef_player, OVEN, state, 0.0).action == OVEN_IN
     assert zone_to_command(chef_player, BOX_DOUGH, state, 0.0).item == DOUGH
     assert zone_to_command(sous_player, BOX_DOUGH, state, 0.0) is None    # dough is Chef-only
+    assert zone_to_command(chef_player, TOPPING_STATION, state, 0.0) is None   # empty hands: nothing
+    state.chef.holding = state.pizza                                       # holding the dough
+    assert zone_to_command(chef_player, TOPPING_STATION, state, 0.0).action == PLACE
+    state.chef.holding = Ingredient(PEPPERONI, state="chopped")            # holding a topping
+    assert zone_to_command(chef_player, TOPPING_STATION, state, 0.0).action == SPRINKLE_DONE
+    assert hold_seconds_for(chef_player, TOPPING_STATION, state) == SPRINKLE_SECONDS
+    assert zone_to_command(chef_player, BANK, state, 0.0).action == PASS_TO_BANK
+    state.chef.holding = None
+    assert hold_seconds_for(chef_player, TOPPING_STATION, state) == HOLD_SECONDS
+
+    # A 2 s hold does not fire after 1 s, and the hold bar is half full
+    timer = DwellTimer()
+    timer.update(TOPPING_STATION, 0.0, 2.0)
+    assert timer.update(TOPPING_STATION, 1.0, 2.0) is None
+    assert abs(timer.progress(1.0) - 0.5) < 1e-9
+    assert timer.update(TOPPING_STATION, 2.0, 2.0) == TOPPING_STATION
     print("Zone -> command OK")
 
     # Dough box: the Chef must grab the dough before spinning or placing it
@@ -1496,6 +1597,13 @@ def selftest():
     assert chef_try(SPIN_DONE) and chef_try(PLACE, DOUGH)
     assert state.chef.holding is None and state.pizza.stage == "sauced"
     print("Dough box OK")
+
+    # Chef can put a topping back on the bank, and take it again
+    state.chef.holding = Ingredient(state.order.toppings[0], state="chopped")
+    assert chef_try(PASS_TO_BANK, state.chef.holding.type)
+    assert state.chef.holding is None and len(state.bank.items) == 1
+    assert chef_try(TAKE_FROM_BANK) and isinstance(state.chef.holding, Ingredient)
+    print("Chef bank (put back / take) OK")
 
     # Full game: 3 pizzas delivered, 1 burnt, every ability used once
     state = GameState(seed=1)
@@ -1562,9 +1670,10 @@ def apply_command(state, command):
     rule = to_rule_command(command)
     if rule is None:
         print(f"No rule for {command.role} {command.action}")
-        return
-    state.apply(rule)
+        return False
+    ok = state.apply(rule)
     print(f"P{command.player_id} {command.action} {command.item or ''} -> {state.last_message}")
+    return ok          # True = the rules accepted it
 
 
 def run_game(camera_index):
@@ -1588,9 +1697,10 @@ def run_game(camera_index):
         # One DwellTimer per hand per player, keys like (2, "left_wrist")
         timers = {(pid, wrist): DwellTimer() for pid in (CHEF_ID, SOUS_CHEF_ID) for wrist in WRISTS}
         last_seen = {CHEF_ID: now, SOUS_CHEF_ID: now}
-        return state, timers, last_seen
+        holding_hands = {}            # {player id: "left_wrist" or "right_wrist"}
+        return state, timers, last_seen, holding_hands
 
-    state, timers, last_seen = new_game(time.monotonic())
+    state, timers, last_seen, holding_hands = new_game(time.monotonic())
     print("Game started. Hold a hand in a zone for 1 s to use it.")
     print("Keys: F chop | U spin | O sprinkle | Z/X Sous abilities | N/M Chef abilities | R restart | Q quit")
 
@@ -1626,23 +1736,27 @@ def run_game(camera_index):
                     zone = zone_at(x, y)
 
                 timer = timers[(pid, wrist)]
-                fired = timer.update(zone, now)
+                fired = timer.update(zone, now, hold_seconds_for(player, zone, state))
                 if zone is not None:
                     hold_bars.append((x, y, timer.progress(now)))
                 if fired:
                     command = zone_to_command(player, fired, state, now)
                     if command is not None:
-                        commands.append(command)
+                        commands.append((command, wrist))   # remember WHICH hand did it
 
         # --- 2. Apply them to the game rules ---------------------------------
         # Both players at the bank in the same frame: the rules let the first one win.
-        for command in commands:
-            apply_command(state, command)
+        for command, wrist in commands:
+            accepted = apply_command(state, command)
+            pid = command.player_id
+            # The hand that just picked something up is the hand that holds it.
+            if accepted and state.players[pid].holding is not None:
+                holding_hands[pid] = wrist
         for event in state.update(now):       # baked, burnt, game_over, ...
             print("EVENT:", event)
 
         # --- 3. Visual feedback ----------------------------------------------
-        draw_everything(frame, players, state, hold_bars)
+        draw_everything(frame, players, state, hold_bars, holding_hands)
         cv2.imshow(WINDOW_NAME, frame)
 
         # --- 4. Keyboard -----------------------------------------------------
@@ -1653,7 +1767,7 @@ def run_game(camera_index):
         if key == "q":
             break
         if key == "r":
-            state, timers, last_seen = new_game(time.monotonic())
+            state, timers, last_seen, holding_hands = new_game(time.monotonic())
             print("New game!")
             continue
         command = key_to_command(key, time.monotonic())
