@@ -45,3 +45,4 @@ trimesh==4.12.2
 typing_extensions==4.16.0
 urllib3==2.8.0
 wheel==0.48.0
+mediapipe==0.10.21
