@@ -25,6 +25,11 @@ HATS = [
     },
 ]
 
+HAT_BY_TRACK_ID = {
+    "1": 0,
+    "2": 1,
+}
+
 REACTION_PNG_PATHS = {
     "angry": "reactions/eyebrows.png",
     "sad": "reactions/tears.png",
@@ -231,7 +236,7 @@ class FaceFilter:
             for name, path in REACTION_PNG_PATHS.items()
         }
 
-    def process_frame(self, frame):
+    def process_frame(self, frame, tracked_players=()):
         """Add the hats and reactions to a BGR frame and return it."""
         height, width = frame.shape[:2]
 
@@ -278,15 +283,30 @@ class FaceFilter:
 
             cv_to_gl = np.diag([1.0, -1.0, -1.0, 1.0])
             hats_added = 0
+            unmatched_players = list(tracked_players)
 
-            # As in the original program, hats are assigned left-to-right.
-            for face, hat, hat_mesh in zip(faces, HATS, self.hat_meshes):
+            for face in faces:
                 face_pose = estimate_head_pose(
                     face, width, height, camera_matrix
                 )
                 if face_pose is None:
                     continue
 
+                face_x = face.landmark[1].x * width
+                face_y = face.landmark[1].y * height
+                match_index = self._match_tracked_player(
+                    face_x, face_y, unmatched_players
+                )
+                if match_index is None:
+                    continue
+
+                track_id, _ = unmatched_players.pop(match_index)
+                hat_index = HAT_BY_TRACK_ID.get(str(track_id))
+                if hat_index is None:
+                    continue
+
+                hat = HATS[hat_index]
+                hat_mesh = self.hat_meshes[hat_index]
                 hat_offset = np.eye(4, dtype=np.float64)
                 hat_offset[:3, 3] = hat["offset"]
 
@@ -324,6 +344,30 @@ class FaceFilter:
                 )
 
         return frame
+
+    @staticmethod
+    def _match_tracked_player(face_x, face_y, tracked_players):
+        best_index = None
+        best_distance = float("inf")
+
+        for index, (_, bbox) in enumerate(tracked_players):
+            x1, y1, x2, y2 = bbox
+            box_width = max(x2 - x1, 1)
+            box_height = max(y2 - y1, 1)
+            center_x = (x1 + x2) / 2.0
+            center_y = (y1 + y2) / 2.0
+            distance = (
+                ((face_x - center_x) / box_width) ** 2
+                + ((face_y - center_y) / box_height) ** 2
+            )
+
+            if distance < best_distance:
+                best_index = index
+                best_distance = distance
+
+        if best_distance > 1.0:
+            return None
+        return best_index
 
     def cycle_reaction(self, player_index):
         if player_index not in (0, 1):
