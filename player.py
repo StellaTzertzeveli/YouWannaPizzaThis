@@ -4,5 +4,5 @@ class Player:
     def __init__(self, name):
         self.name = name
 
-    id = 0 #ID assigned by 
-    bbox = []
+    id = 0 #ID assigned by deepsort
+    bbox = [] #boundary Box (Format: [lt-x, lt-y, rb-x, rb-y])

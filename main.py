@@ -5,7 +5,8 @@ from insightface.app import FaceAnalysis
 from player import Player
 
 players = [
-    
+    Player("Chef"),
+    Player("Sous Chef")
 ]
 
 cap = cv2.VideoCapture(0)
@@ -61,7 +62,7 @@ while cap.isOpened():
     else:
         tracks = []
     
-    for track in tracks:
+    for i,track in enumerate(tracks):
         if not track.is_confirmed():
             continue
         if track.time_since_update > 0:
@@ -70,13 +71,15 @@ while cap.isOpened():
         x1, y1, x2, y2 = map(int, track.to_ltrb())
         track_id = track.track_id
         
-        #Check assigned IDs 
+        if i <= 1:
+            players[i].id = track_id
+            players[i].bbox = [x1,y1,x2,y2]
 
         cv2.rectangle(
             frame, (x1, y1), (x2, y2), (0, 255, 0), 2
         )
         cv2.putText(
-            frame, f"ID {track_id}",
+            frame, f"{players[i].name}",
             (x1, max(20, y1 - 10)),
             cv2.FONT_HERSHEY_SIMPLEX, 0.6,
             (0, 255, 0), 2
