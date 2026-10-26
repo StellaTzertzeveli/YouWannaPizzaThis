@@ -1,28 +1,47 @@
-# Task 4 (Player Interaction and Game Control) - Python packages
-# Install everything with:  pip install -r requirements.txt
-# Python version: 3.12 (NOT 3.13 - mediapipe 0.10.21 has no files for 3.13)
-
-# Video loop, webcam, drawing feedback (hold bars, oven indicator) on frames.
-# "contrib" is the full OpenCV build; mediapipe 0.10.21 installs it anyway,
-# so we use it instead of opencv-python to avoid two conflicting copies of cv2.
-opencv-contrib-python
-
-# Pose keypoints for testing, hand landmarks and the gesture recognizer (thumbs up).
-# Pinned as agreed in the 01/10 meeting.
-mediapipe==0.10.21
-
-# Maths on keypoint positions (distances, averages, arrays).
-# No version pinned: pip picks one that matches mediapipe.
-numpy~=2.5.3
-
-
-opencv-python~=5.0.0.93
-
-# Task idk - face filters/ AR filters
-#for rendering 3D objects as face filters
-numpy==1.26.4
-protobuf==4.25.8
+av==18.1.0
+certifi==2026.7.22
+charset-normalizer==3.5.2
+cloudpickle==3.1.2
+colorama==0.4.6
+deep-sort-realtime==1.3.2
+flatbuffers==25.12.19
+freetype-py==2.5.1
+idna==3.20
+ImageIO==2.38.0
+insightface==2.0
+joblib==1.6.0
+lazy-loader==0.6
+ml_dtypes==0.6.0
+narwhals==2.27.1
+networkx==3.7
+numpy==2.5.3
+nvidia-cublas==13.8.0.4
+nvidia-cuda-nvrtc==13.4.92
+nvidia-cuda-runtime==13.4.92
+nvidia-cudnn-cu13==9.27.0.42
+nvidia-cufft==12.4.0.43
+nvidia-curand==10.4.4.72
+nvidia-nvjitlink==13.4.92
+onnx==1.23.1
+onnxruntime-gpu==1.30.0
 opencv-contrib-python==4.11.0.86
+opencv-python==5.0.0.93
+packaging==26.3
+pillow==11.3.0
+protobuf==7.36.2
+pyglet==2.1.19
+PyOpenGL==3.1.0
 pyrender==0.1.45
-trimesh>=4.0,<5
-Pillow>=10,<12
+requests==2.34.2
+scikit-image==0.26.0
+scikit-learn==1.9.1
+scipy==1.18.1
+setuptools==84.2.1
+six==1.17.0
+threadpoolctl==3.7.0
+tifffile==2026.9.20
+tqdm==4.70.1
+trimesh==4.12.2
+typing_extensions==4.16.0
+urllib3==2.8.0
+wheel==0.48.0
