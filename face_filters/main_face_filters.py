@@ -8,7 +8,7 @@ from math import atan, degrees
 
 
 HATS = [
-    #a different hat for the chef and for the chous chef
+    #a different hat for the chef and for the sous chef
     {
         "obj": "3D_models/chef_hat.obj",
         "texture": None,

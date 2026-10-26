@@ -3,6 +3,7 @@ import torch
 from PIL import Image
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from facenet_pytorch import MTCNN, InceptionResnetV1
+from face_filters.face_class import FaceFilter
 
 from player import Player
 from Task_4.tracking import MP_Tracking
@@ -11,6 +12,8 @@ players = [
     Player("Chef"),
     Player("Sous Chef")
 ]
+face_filter = FaceFilter()
+
 
 mp_tracking = MP_Tracking()
 
