@@ -3,6 +3,7 @@ import torch
 from PIL import Image
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from facenet_pytorch import MTCNN, InceptionResnetV1
+from face_filters.face_class import FaceFilter
 
 from player import Player
 
@@ -10,6 +11,8 @@ players = [
     Player("Chef"),
     Player("Sous Chef")
 ]
+face_filter = FaceFilter()
+
 
 cap = cv2.VideoCapture(0)
 fps = int(round(cap.get(5)))
@@ -46,6 +49,8 @@ while cap.isOpened():
 
     detections = []
     embeddings = []
+    #track face and apply face filters via ze class
+    frame = face_filter.process_frame(frame)
 
     img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     boxes, probs = mtcnn.detect(img)
