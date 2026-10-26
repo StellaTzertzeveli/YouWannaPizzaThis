@@ -1,9 +1,11 @@
 import cv2
+import torch
+from PIL import Image
 from deep_sort_realtime.deepsort_tracker import DeepSort
-from insightface.app import FaceAnalysis
+from facenet_pytorch import MTCNN, InceptionResnetV1
 
 class MP_Tracking:
-    def __init__(self):
+    def __init__(self):    
         self.tracker = DeepSort(
             max_age=30,
             n_init=5,
@@ -11,61 +13,55 @@ class MP_Tracking:
             embedder=None
         )
 
-        self.face_recog = FaceAnalysis(
-            name="buffalo_l",
-            providers=[
-                "CUDAExecutionProvider",
-                "CPUExecutionProvider"
-            ]    
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Face detector (MTCNN) - also crops faces to FaceNet's 160x160 input
+        self.mtcnn = MTCNN(
+            image_size=160,
+            margin=20,
+            keep_all=True,
+            device=self.device
         )
+
+        # Face embeddings (FaceNet)
+        self.facenet = InceptionResnetV1(pretrained="vggface2").eval().to(self.device)
         
-        self.face_recog.prepare(ctx_id=0, det_size=(320, 320))
+        self.min_confidence = 0.7
         
     def get_ids(self,frame):
         detections = []
         embeddings = []
-        
-        ids = []
-        
-        faces = self.face_recog.get(frame)
-        
-        for face in faces:
-            x1, y1, x2, y2 = face.bbox.tolist()
-            confidence = float(face.det_score)
 
-            # DeepSORT expects [left, top, width, height]
-            detections.append((
-                [x1, y1, x2 - x1, y2 - y1],
-                confidence,
-                "Face"
-            ))
+        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        boxes, probs = self.mtcnn.detect(img)
 
-            embeddings.append(face.embedding)
+        if boxes is not None:
+            keep = probs >= self.min_confidence
+            boxes, probs = boxes[keep], probs[keep]
+
+        if boxes is not None and len(boxes) > 0:
+            # Cropped + standardized faces, shape (N, 3, 160, 160)
+            faces = self.mtcnn.extract(img, boxes, save_path=None)
+
+            with torch.inference_mode():
+                embeds = self.facenet(faces.to(self.device)).cpu().numpy()
+
+            for box, confidence, embedding in zip(boxes, probs, embeds):
+                x1, y1, x2, y2 = box.tolist()
+
+                # DeepSORT expects [left, top, width, height]
+                detections.append((
+                    [x1, y1, x2 - x1, y2 - y1],
+                    float(confidence),
+                    "Face"
+                ))
+
+                embeddings.append(embedding)
+
+        # Always update, so tracks age out while no face is visible
+        tracks = self.tracker.update_tracks(
+            detections,
+            embeds=embeddings
+        )
         
-        if detections:
-            tracks = self.tracker.update_tracks(
-                detections,
-                embeds=embeddings
-            )
-        else:
-            tracks = []
-        
-        for i,track in enumerate(tracks):
-            if not track.is_confirmed():
-                continue
-            if track.time_since_update > 0:
-                continue
-
-            if i >= 2:
-                continue
-
-            x1, y1, x2, y2 = map(int, track.to_ltrb())
-            track_id = track.track_id
-            
-            ids.append(([x1,y1,x2,y2], int(track_id)))
-            
-            cv2.rectangle(
-                frame, (x1, y1), (x2, y2), (0, 255, 0), 2
-            )
-            
-        return ids
+        return tracks
