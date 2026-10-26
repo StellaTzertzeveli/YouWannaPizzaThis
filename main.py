@@ -5,38 +5,19 @@ from deep_sort_realtime.deepsort_tracker import DeepSort
 from facenet_pytorch import MTCNN, InceptionResnetV1
 
 from player import Player
+from Task_4.tracking import MP_Tracking
 
 players = [
     Player("Chef"),
     Player("Sous Chef")
 ]
 
+mp_tracking = MP_Tracking()
+
 cap = cv2.VideoCapture(0)
 fps = int(round(cap.get(5)))
 frame_width = int(cap.get(3))
 frame_height = int(cap.get(4))
-
-tracker = DeepSort(
-    max_age=30,
-    n_init=5,
-    max_cosine_distance=0.4,
-    embedder=None
-)
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Face detector (MTCNN) - also crops faces to FaceNet's 160x160 input
-mtcnn = MTCNN(
-    image_size=160,
-    margin=20,
-    keep_all=True,
-    device=device
-)
-
-# Face embeddings (FaceNet)
-facenet = InceptionResnetV1(pretrained="vggface2").eval().to(device)
-
-MIN_CONFIDENCE = 0.7
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -44,40 +25,7 @@ while cap.isOpened():
     if not ret:
         break
 
-    detections = []
-    embeddings = []
-
-    img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    boxes, probs = mtcnn.detect(img)
-
-    if boxes is not None:
-        keep = probs >= MIN_CONFIDENCE
-        boxes, probs = boxes[keep], probs[keep]
-
-    if boxes is not None and len(boxes) > 0:
-        # Cropped + standardized faces, shape (N, 3, 160, 160)
-        faces = mtcnn.extract(img, boxes, save_path=None)
-
-        with torch.inference_mode():
-            embeds = facenet(faces.to(device)).cpu().numpy()
-
-        for box, confidence, embedding in zip(boxes, probs, embeds):
-            x1, y1, x2, y2 = box.tolist()
-
-            # DeepSORT expects [left, top, width, height]
-            detections.append((
-                [x1, y1, x2 - x1, y2 - y1],
-                float(confidence),
-                "Face"
-            ))
-
-            embeddings.append(embedding)
-
-    # Always update, so tracks age out while no face is visible
-    tracks = tracker.update_tracks(
-        detections,
-        embeds=embeddings
-    )
+    tracks = mp_tracking.get_ids(frame)
 
     for i,track in enumerate(tracks):
         if not track.is_confirmed():
