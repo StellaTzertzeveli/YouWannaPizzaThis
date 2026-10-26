@@ -44,11 +44,5 @@ torch==2.14.1
 torchvision==0.29.1
 tqdm==4.70.1
 typing_extensions==4.16.0
-<<<<<<< HEAD
 tzdata==2026.5
 urllib3==2.8.0
-=======
-urllib3==2.8.0
-wheel==0.48.0
-mediapipe==0.10.21
->>>>>>> d17e5292e073d58fbb16c450afd27093a33bf5a5
