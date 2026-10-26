@@ -1,0 +1,23 @@
+# Files Git should NOT upload to GitHub.
+# Each line is a pattern; a line starting with # is a comment.
+
+# Virtual environment: every teammate makes their own with requirements.txt
+.venv/
+venv/
+
+# Python's automatic speed-up files, recreated every time you run code
+__pycache__/
+*.pyc
+
+# PyCharm's personal settings (window layout, your interpreter path, ...)
+.idea/
+
+# VS Code's personal settings, in case a teammate uses it
+.vscode/
+
+# Files the operating system creates by itself
+.DS_Store
+Thumbs.db
+
+# Pictures our demo scripts generate (they can be remade any time)
+zones_preview.png
