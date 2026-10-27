@@ -91,7 +91,9 @@ def make_zones():
     # Add the topping station and oven zones to the list of zones
     zones.append(Zone("TOPPING STATION", 0.56, 0.78, 0.99, 0.98, (40, 80, 230)))
     # Add the oven zone to the list of zones
-    zones.append(Zone("OVEN", 0.88, 0.28, 0.99, 0.72, (0, 90, 255)))
+    zones.append(Zone("OVEN", 0.88, 0.28, 0.99, 0.48, (0, 90, 255)))
+    # Add the dough zone to the list of zones
+    zones.append(Zone("DOUGH", 0.88, 0.53, 0.99, 0.72, (170, 210, 240)))
     return zones
             
 def draw_hud(frame):
