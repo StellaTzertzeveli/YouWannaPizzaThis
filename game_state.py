@@ -7,12 +7,16 @@ INGREDIENT_NAMES = [name for name, color in INGREDIENTS]
 # List of surfaces in the game
 SURFACES = ["CHOPPING COUNTER", "TOPPING STATION", "OVEN", "BANK", "DELIVERY"]
 
+CHOPS_NEEDED = 4
+
 class GameState:
     def __init__(self):
         # Initialize the game state with no held ingredient
         self.holding = None
         # Start the game with nothing on the surfaces
         self.items = {name: None for name in SURFACES}
+        # Initialize the number of chops to 0
+        self.chops = 0
         
     def on_hold(self, zone_name):
         # If the player is hovering over a zone that is either an ingredient or dough
@@ -33,18 +37,28 @@ class GameState:
                     # Place the held item on the surface and stop holding it
                     self.items[zone_name] = self.holding
                     self.holding = None
+                    if zone_name == "CHOPPING COUNTER":
+                        self.chops = 0                       # a freshly placed ingredient starts unchopped
                 # If there is something on the surface and the player isnt holding anything
                 elif on_surface is not None and self.holding is None:
                     # Pick up the item from the surface and make the zone stop holding it
                     self.holding = on_surface
                     self.items[zone_name] = None
                     
+    def on_chop(self):
+        item = self.items["CHOPPING COUNTER"]
+        if item in INGREDIENT_NAMES:
+            self.chops += 1
+            if self.chops >= CHOPS_NEEDED:
+                self.items["CHOPPING COUNTER"] = item + "_CHOPPED"
+                self.chops = 0
+    
     def draw(self, frame, zones):
         h, w, _ = frame.shape
         for zone in zones:
             item = self.items.get(zone.name)
             if item is not None:
-                cv2.putText(frame, item, (int(zone.x1 * w) + 5, int(zone.y1 * h) + 55),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        cv2.putText(frame, f"Holding: {self.holding}", (int(0.58 * w), int(0.74 * h)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                cv2.putText(frame, item, (int(zone.x1 * w) + 5, int(zone.y1 * h) + 55), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                cv2.putText(frame, f"Holding: {self.holding}", (int(0.58 * w), int(0.74 * h)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                if zone.name == "CHOPPING COUNTER" and item in INGREDIENT_NAMES:
+                    cv2.putText(frame, f"Chops: {self.chops}/{CHOPS_NEEDED}", (int(zone.x1 * w) + 5, int(zone.y1 * h) + 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)

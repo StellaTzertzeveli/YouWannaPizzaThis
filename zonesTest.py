@@ -5,6 +5,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from zones import make_zones, draw_hud
 from game_state import GameState
+from motion_detectors.ChopDetector import ChopDetector
 
 latest_hand_result = None
 
@@ -26,6 +27,10 @@ zones = make_zones()
 # Create a game state here
 state = GameState()
 
+# Create a chop detector here
+chop_detector = ChopDetector()
+chop_detector.start_detection()
+
 cap = cv2.VideoCapture(0)
 while cap.isOpened():
     success, frame = cap.read()
@@ -45,6 +50,11 @@ while cap.isOpened():
             palm = hand[9]  # middle-finger knuckle = roughly the centre of the palm
             palms.append(palm)
             cv2.circle(frame, (int(palm.x * w), int(palm.y * h)), 8, (0, 255, 0), -1)
+            chop_detector.update(hand)
+            # Hand every new chop to the game state, then reset the detector's count
+        for _ in range(chop_detector.get_chop_count()):
+            state.on_chop()
+            chop_detector.reset_chop_count()
 
     for zone in zones:
         inside = any(zone.contains(p.x, p.y) for p in palms)
@@ -53,7 +63,9 @@ while cap.isOpened():
             state.on_hold(zone.name)
             print(f"{zone.name} triggered! Holding: {state.holding}")
         zone.draw(frame, progress=zone.progress(now))
+    # Draw the HUD (not interactible)
     draw_hud(frame)
+    # Draw the game zones (interactible)
     state.draw(frame, zones)
     cv2.imshow("Zones", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
