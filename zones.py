@@ -1,5 +1,13 @@
 import cv2
 
+# List of touples containing the name and color of each ingredient zone
+INGREDIENTS = [
+    ("CHEESE", (0, 220, 255)),
+    ("PEPPERONI", (0, 0, 220)),
+    ("MUSHROOMS", (140, 180, 210)),
+    ("PEPPERS", (0, 200, 0)),
+]
+    
 # Defines a zone, it has a name, coordinates (x1, y1) for the top-left corner and 
 # (x2, y2) for the bottom-right corner, and a color for visualization.
 class Zone:
@@ -67,21 +75,15 @@ def make_zones():
     zones = [Zone("BANK", 0.45, 0.25, 0.55, 0.75, (0, 200, 255))
              ]
     
-    # List of touples containing the name and color of each ingredient zone
-    ingredients = [
-        ("CHEESE", (255, 255, 0)),
-        ("PEPPERONI", (0, 0, 255)),
-        ("MUSHROOMS", (0, 255, 0)),
-        ("PEPPERS", (0, 255, 255)),
-    ]
+    
     
     # Calculate the width of each ingredient zone based on the number of ingredients, so the boxes resize based on screen size
-    ingredient_box_width = 0.45/len(ingredients)
-    for i, (name, color) in enumerate(ingredients):
+    box_width = 0.45 / len(INGREDIENTS)
+    for i, (name, color) in enumerate(INGREDIENTS):
         # Calculate the left edge of the zone based on its index and the width of each zone
-        left = i * ingredient_box_width
+        left = i * box_width
         # Append the new zone to the list of zones, with a small margin on the left and right edges
-        zones.append(Zone(name, left + 0.01, 0.02, left + ingredient_box_width - 0.01, 0.20, color))
+        zones.append(Zone(name, left + 0.01, 0.02, left + box_width - 0.01, 0.20, color))
     # Add the chopping counter zone to the list of zones
     zones.append(Zone("CHOPPING COUNTER", 0.01, 0.78, 0.44, 0.98, (60, 120, 180)))
     # App the delivery zone to the list of zones

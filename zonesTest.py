@@ -4,6 +4,7 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from zones import make_zones, draw_hud
+from game_state import GameState
 
 latest_hand_result = None
 
@@ -21,6 +22,9 @@ hand_landmarker = vision.HandLandmarker.create_from_options(hand_options)
 
 # Create zones here
 zones = make_zones()
+
+# Create a game state here
+state = GameState()
 
 cap = cv2.VideoCapture(0)
 while cap.isOpened():
@@ -45,9 +49,12 @@ while cap.isOpened():
     for zone in zones:
         inside = any(zone.contains(p.x, p.y) for p in palms)
         if zone.update(inside, now):
-            print(f"{zone.name} triggered!")
+            # Tell game state that the zone was triggered, so it can update the held item or surface items accordingly
+            state.on_hold(zone.name)
+            print(f"{zone.name} triggered! Holding: {state.holding}")
         zone.draw(frame, progress=zone.progress(now))
     draw_hud(frame)
+    state.draw(frame, zones)
     cv2.imshow("Zones", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
