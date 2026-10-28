@@ -1,11 +1,9 @@
 import math
-
-import cv2
-from matplotlib import text
-from zones import *
 import random
+import cv2
+from zones import INGREDIENTS, BANK_SLOTS
+from images import draw_image
 
-import zones
 
 # List of ingredient names
 INGREDIENT_NAMES = [name for name, color in INGREDIENTS]
@@ -30,25 +28,55 @@ BURNT_PENALTY = 10
 # Game Time
 GAME_TIME = 90
 
+# Surfaces that only accept certain items. Surfaces not listed here accept anything.
 ACCEPTS = {
     "TOPPING STATION": ["DOUGH_SPUN"],
     "OVEN": ["PIZZA"],
-    "DELIVERY": ["PIZZA_BAKED","PIZZA_BURNT"]
-    
+    "DELIVERY": ["PIZZA_BAKED", "PIZZA_BURNT"],
 }
+
 
 # Pizza class to keep track of pizza stage + ingredients used
 class Pizza:
     def __init__(self):
-        self.stage = "PIZZA"
-        self.toppings = []
+        self.stage = "PIZZA"  # PIZZA -> PIZZA_BAKED -> PIZZA_BURNT
+        self.toppings = []    # e.g. ["CHEESE", "PEPPERS"]
+
     def __str__(self):
         return " ".join([self.stage] + self.toppings)
 
+
 def kind(item):
+    # The name the rules look at: a pizza's stage, or the item itself if it is just a name
     if isinstance(item, Pizza):
         return item.stage
     return item
+
+
+def image_name(item, chops=0):
+    # Which picture shows this item, e.g. "CHEESE" with 2 chops -> "cheese_cut_2"
+    if item in INGREDIENT_NAMES:
+        if chops > 0:
+            return f"{item.lower()}_cut_{chops}"
+        return f"{item.lower()}_raw"
+    if item in CHOPPED_NAMES:
+        return item.replace("_CHOPPED", "").lower() + "_sliced"
+    return item.lower()
+
+
+def draw_item(frame, item, x, y, size, chops=0):
+    # Draws an item as a picture in a size x size square; falls back to its name if there is no picture
+    if isinstance(item, Pizza):
+        if draw_image(frame, "pizza", x, y, size):
+            for topping in item.toppings:
+                draw_image(frame, topping.lower() + "_sliced", x, y, size)  # toppings drawn on top of the pizza
+            if item.stage != "PIZZA":
+                cv2.putText(frame, item.stage.replace("PIZZA_", ""), (x, y + size), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 2)
+            return
+    elif draw_image(frame, image_name(item, chops), x, y, size):
+        return
+    cv2.putText(frame, str(item), (x, y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
 
 class GameState:
     def __init__(self):
@@ -58,61 +86,61 @@ class GameState:
         self.items = {name: None for name in SURFACES}
         # Initialize the number of chops to 0
         self.chops = 0
-        # Initialize oven timer to 0
-        self.oven_start = 0
-        # Initialize the order list to an empty list
-        self.order = []
-        self.new_order()
-        # Initialize the game start time
+        # When the pizza went into the oven (None = oven empty)
+        self.oven_start = None
+        # Initialize the game timer, paused until the space bar is pressed
         self.time_left = GAME_TIME
         self.timer_running = False
         self.last_now = None
-        
+        # Initialize the order list and pick the first recipe
+        self.order = []
+        self.new_order()
+
     def new_order(self):
         amount = random.randint(1, 3)
         self.order = random.sample(INGREDIENT_NAMES, amount)
-        
+
     def on_hold(self, zone_name):
         # If the player is hovering over a zone that is either an ingredient or dough
         if zone_name in INGREDIENT_NAMES or zone_name == "DOUGH":
             # If the player is not already holding something
-            if self.holding == None:
+            if self.holding is None:
                 # Let the player hold the ingredient or dough
                 self.holding = zone_name
-            # If the player is hovering over trash
+        # If the player is hovering over trash
         elif zone_name == "TRASH":
-                # Let player throw awy the item
-                self.holding = None
-            # If the player is hovering over a surface
+            # Let player throw away the item
+            self.holding = None
+        # If the player is hovering over a surface
         elif zone_name in SURFACES:
-                on_surface = self.items[zone_name]
-                if zone_name == "TOPPING STATION" and isinstance(on_surface, Pizza) and self.holding in CHOPPED_NAMES:
-                    topping = self.holding.replace("_CHOPPED", "")
-                    if topping not in on_surface.toppings:
-                        on_surface.toppings.append(topping)
-                        self.holding = None
-                    return
-                # If there is nothing on the surface and the player is holding something
-                if on_surface is None and self.holding is not None:
-                    if zone_name in ACCEPTS and kind(self.holding) not in ACCEPTS[zone_name]:   
-                        return
-                    # Place the held item on the surface and stop holding it
-                    self.items[zone_name] = self.holding
+            on_surface = self.items[zone_name]
+            # Chopped ingredient over the pizza on the topping station: add it as a topping
+            if zone_name == "TOPPING STATION" and isinstance(on_surface, Pizza) and self.holding in CHOPPED_NAMES:
+                topping = self.holding.replace("_CHOPPED", "")
+                if topping not in on_surface.toppings:
+                    on_surface.toppings.append(topping)
                     self.holding = None
-                    if zone_name == "CHOPPING COUNTER":
-                        self.chops = 0       
-                    if zone_name == "TOPPING STATION":
-                        self.items[zone_name] = Pizza()     
-                    if zone_name == "DELIVERY":
-                        self.deliver(self.items[zone_name])
-                        self.items[zone_name] = None
-                # If there is something on the surface and the player isnt holding anything
-                elif on_surface is not None and self.holding is None:
-                    # Pick up the item from the surface and make the zone stop holding it
-                    self.holding = on_surface
-                    self.items[zone_name] = None
-                    
-                    
+                return
+            # If there is nothing on the surface and the player is holding something
+            if on_surface is None and self.holding is not None:
+                if zone_name in ACCEPTS and kind(self.holding) not in ACCEPTS[zone_name]:
+                    return  # not allowed here: nothing happens
+                # Place the held item on the surface and stop holding it
+                self.items[zone_name] = self.holding
+                self.holding = None
+                if zone_name == "CHOPPING COUNTER":
+                    self.chops = 0  # a freshly placed ingredient starts unchopped
+                if zone_name == "TOPPING STATION":
+                    self.items[zone_name] = Pizza()  # sauce is added instantly
+                if zone_name == "DELIVERY":
+                    self.deliver(self.items[zone_name])
+                    self.items[zone_name] = None  # the pizza is gone: served
+            # If there is something on the surface and the player isnt holding anything
+            elif on_surface is not None and self.holding is None:
+                # Pick up the item from the surface and make the zone stop holding it
+                self.holding = on_surface
+                self.items[zone_name] = None
+
     def deliver(self, pizza):
         if pizza.stage == "PIZZA_BURNT":
             self.time_left -= BURNT_PENALTY
@@ -122,7 +150,7 @@ class GameState:
             self.time_left -= WRONG_PENALTY
         self.time_left = max(self.time_left, 0)
         self.new_order()
-                    
+
     # When items are on the chopping counter, the player can chop them. After a certain number of chops, the item becomes chopped.
     def on_chop(self):
         item = self.items["CHOPPING COUNTER"]
@@ -131,22 +159,23 @@ class GameState:
             if self.chops >= CHOPS_NEEDED:
                 self.items["CHOPPING COUNTER"] = item + "_CHOPPED"
                 self.chops = 0
-    
+
     # When the player is holding dough, they can spin it to make it pizza dough.
     def on_spin(self):
         if self.holding == "DOUGH":
             self.holding = "DOUGH_SPUN"
-    
+
     def toggle_timer(self):
         self.timer_running = not self.timer_running
-    
-    # Logic for how long the pizza has to stay in the oven
+
+    # Called every frame: things that happen over time, without a hand doing anything
     def update(self, now):
-        # Called every frame: things that happen over time, without a hand doing anything
+        # Game timer: count down only while running
         if self.timer_running and self.last_now is not None:
             self.time_left = max(self.time_left - (now - self.last_now), 0)
         self.last_now = now
 
+        # Oven: bake after BAKE_TIME, burn after BURN_TIME
         pizza = self.items["OVEN"]
         if pizza is None:
             self.oven_start = None  # oven empty: stop the clock
@@ -159,20 +188,204 @@ class GameState:
         elif pizza.stage == "PIZZA_BAKED" and time_in_oven >= BURN_TIME:
             pizza.stage = "PIZZA_BURNT"
 
-    def draw(self, frame, zones):
+    def draw(self, frame, zones, palms=()):
         h, w, _ = frame.shape
         for zone in zones:
             item = self.items.get(zone.name)
+            if zone.name in INGREDIENT_NAMES or zone.name == "DOUGH":
+                item = zone.name  # a box always shows what you can grab from it
             if item is not None:
-                cv2.putText(frame, str(item), (int(zone.x1 * w) + 5, int(zone.y1 * h) + 55), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                x, y = int(zone.x1 * w) + 5, int(zone.y1 * h) + 32  # just under the zone's name
+                size = min(int((zone.x2 - zone.x1) * w), int((zone.y2 - zone.y1) * h) - 35) - 10
+                chops = self.chops if zone.name == "CHOPPING COUNTER" else 0
+                draw_item(frame, item, x, y, size, chops)
                 if zone.name == "CHOPPING COUNTER" and item in INGREDIENT_NAMES:
-                    cv2.putText(frame, f"Chops: {self.chops}/{CHOPS_NEEDED}", (int(zone.x1 * w) + 5, int(zone.y1 * h) + 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        # Recipe: one line per topping, inside the recipe box
+                    cv2.putText(frame, f"Chops: {self.chops}/{CHOPS_NEEDED}", (x + size + 10, y + size // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        # Recipe: one picture per topping, side by side inside the recipe box
+        size = int(0.18 * h) - 35
         for i, topping in enumerate(self.order):
-            cv2.putText(frame, topping, (int(0.58 * w) + 5, int(0.02 * h) + 45 + i * 17), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+            draw_item(frame, topping, int(0.58 * w) + 5 + i * (size + 5), int(0.02 * h) + 32, size)
         # Seconds left, centred in the timer circle
         text = str(math.ceil(self.time_left))
         (text_w, text_h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)
         cx, cy = int(0.51 * w), int(0.12 * h)
         cv2.putText(frame, text, (cx - text_w // 2, cy + text_h // 2), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 2)
-        cv2.putText(frame, f"Holding: {self.holding}", (int(0.58 * w), int(0.74 * h)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        # What the player holds: the word "Holding:" with the picture right after it
+        hx, hy = int(0.58 * w), int(0.74 * h)
+        cv2.putText(frame, "Holding:", (hx, hy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        if self.holding is not None:
+            (text_w, _), _ = cv2.getTextSize("Holding:", cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+            draw_item(frame, self.holding, hx + text_w + 10, hy - 30, 40)
+        # The held item on the hand, drawn last so it's on top of everything
+        if self.holding is not None and len(palms) > 0:
+            palm = palms[0]  # shortcut: one player, so the item follows the first hand found; per-player hands come with two players
+            size = int(0.12 * h)
+            draw_item(frame, self.holding, int(palm.x * w) - size // 2, int(palm.y * h) - size // 2, size)
+
+
+if __name__ == "__main__":
+    # Grab, place, take, trash
+    state = GameState()
+    state.on_hold("CHEESE")
+    assert state.holding == "CHEESE"                    # grab
+    state.on_hold("PEPPERS")
+    assert state.holding == "CHEESE"                    # hands full: can't grab a second one
+    state.on_hold("CHOPPING COUNTER")
+    assert state.items["CHOPPING COUNTER"] == "CHEESE"  # placed
+    assert state.holding is None
+    state.on_hold("BANK 1")
+    assert state.items["BANK 1"] is None                # empty hands + empty bank: nothing
+    state.on_hold("CHOPPING COUNTER")
+    assert state.holding == "CHEESE"                    # taken back
+    assert state.items["CHOPPING COUNTER"] is None
+    state.on_hold("TRASH")
+    assert state.holding is None                        # thrown away
+    state.on_hold("DOUGH")
+    state.on_hold("BANK 1")
+    state.on_hold("MUSHROOMS")
+    state.on_hold("BANK 1")
+    assert state.items["BANK 1"] == "DOUGH"             # bank full: keep holding
+    assert state.holding == "MUSHROOMS"
+
+    # Chopping
+    state = GameState()
+    state.on_chop()
+    assert state.chops == 0                             # nothing on the counter: chop does nothing
+    state.on_hold("CHEESE")
+    state.on_hold("CHOPPING COUNTER")
+    for _ in range(CHOPS_NEEDED - 1):
+        state.on_chop()
+    assert state.items["CHOPPING COUNTER"] == "CHEESE"  # one chop short: not done yet
+    state.on_chop()
+    assert state.items["CHOPPING COUNTER"] == "CHEESE_CHOPPED"  # last chop: done
+    state.on_chop()
+    assert state.chops == 0                             # chopped stuff can't be chopped again
+    state.on_hold("CHOPPING COUNTER")
+    assert state.holding == "CHEESE_CHOPPED"            # pick it up
+
+    # Dough -> spin -> sauce -> bake -> burn
+    state = GameState()
+    state.on_hold("DOUGH")
+    state.on_hold("TOPPING STATION")
+    assert state.holding == "DOUGH"                     # unspun dough: not allowed on the topping station
+    state.on_spin()
+    assert state.holding == "DOUGH_SPUN"
+    state.on_hold("TOPPING STATION")
+    assert kind(state.items["TOPPING STATION"]) == "PIZZA"  # sauce added instantly
+    state.on_hold("TOPPING STATION")
+    state.on_hold("OVEN")
+    assert kind(state.items["OVEN"]) == "PIZZA"
+    state.update(now=100.0)                             # first frame: clock starts
+    state.update(now=104.9)
+    assert kind(state.items["OVEN"]) == "PIZZA"         # not baked yet
+    state.update(now=105.0)
+    assert kind(state.items["OVEN"]) == "PIZZA_BAKED"   # 5 s: baked
+    state.update(now=110.0)
+    assert kind(state.items["OVEN"]) == "PIZZA_BURNT"   # 10 s: burnt
+    state.on_hold("OVEN")
+    assert kind(state.holding) == "PIZZA_BURNT"         # take it out
+    state.update(now=111.0)
+    assert state.oven_start is None                     # empty oven: clock reset
+    state.on_hold("OVEN")
+    assert state.items["OVEN"] is None                  # burnt pizza can't go back in
+
+    # Random recipes: try many, check the rules every time
+    for _ in range(200):
+        state.new_order()
+        assert 1 <= len(state.order) <= 3                    # 1 to 3 toppings
+        assert len(set(state.order)) == len(state.order)     # no duplicates
+        for topping in state.order:
+            assert topping in INGREDIENT_NAMES               # only real ingredients
+
+    # Four bank slots, each holding its own item
+    state = GameState()
+    for name, slot in zip(["CHEESE", "PEPPERONI", "MUSHROOMS", "PEPPERS"], BANK_NAMES):
+        state.on_hold(name)
+        state.on_hold(slot)
+    assert [state.items[slot] for slot in BANK_NAMES] == ["CHEESE", "PEPPERONI", "MUSHROOMS", "PEPPERS"]
+    state.on_hold("BANK 3")
+    assert state.holding == "MUSHROOMS"                 # take exactly the one you reach for
+    assert state.items["BANK 3"] is None
+
+    # Game timer
+    state = GameState()
+    state.update(now=0.0)
+    state.update(now=5.0)
+    assert state.time_left == 90                        # paused at the start: no time lost
+    state.toggle_timer()
+    state.update(now=7.5)
+    assert state.time_left == 87.5                      # running: 2.5 s later, 2.5 s gone
+    state.toggle_timer()
+    state.update(now=20.0)
+    assert state.time_left == 87.5                      # paused again: frozen
+    state.toggle_timer()
+    state.update(now=200.0)
+    assert state.time_left == 0                         # never goes below 0
+
+    # Toppings
+    state = GameState()
+    state.items["TOPPING STATION"] = Pizza()
+    state.items["BANK 1"] = "CHEESE_CHOPPED"
+    state.on_hold("PEPPERS")
+    state.on_hold("TOPPING STATION")
+    assert state.holding == "PEPPERS"                   # raw ingredient: can't go on the pizza
+    state.on_hold("TRASH")
+    state.on_hold("BANK 1")
+    state.on_hold("TOPPING STATION")
+    pizza = state.items["TOPPING STATION"]
+    assert pizza.toppings == ["CHEESE"]                 # chopped cheese added
+    assert state.holding is None
+    state.holding = "CHEESE_CHOPPED"
+    state.on_hold("TOPPING STATION")
+    assert pizza.toppings == ["CHEESE"]                 # no double cheese
+    assert state.holding == "CHEESE_CHOPPED"
+    assert str(pizza) == "PIZZA CHEESE"
+    state.holding = None
+    state.on_hold("TOPPING STATION")
+    state.on_hold("OVEN")
+    assert state.items["OVEN"] is pizza                 # the same pizza, toppings and all, is in the oven
+
+    # Delivery
+    state = GameState()
+    state.order = ["CHEESE", "PEPPERS"]
+    pizza = Pizza()
+    state.holding = pizza
+    state.on_hold("DELIVERY")
+    assert state.holding is pizza                       # unbaked pizza: not accepted
+    pizza.toppings = ["PEPPERS", "CHEESE"]              # other order than the recipe: still correct
+    pizza.stage = "PIZZA_BAKED"
+    state.on_hold("DELIVERY")
+    assert state.holding is None and state.items["DELIVERY"] is None  # served and gone
+    assert state.time_left == 90 + 15
+    state.order = ["CHEESE"]
+    state.holding = Pizza()
+    state.holding.stage = "PIZZA_BAKED"
+    state.on_hold("DELIVERY")
+    assert state.time_left == 105 - 5                   # wrong toppings
+    state.holding = Pizza()
+    state.holding.stage = "PIZZA_BURNT"
+    state.on_hold("DELIVERY")
+    assert state.time_left == 100 - 10                  # burnt
+    state.time_left = 3
+    state.holding = Pizza()
+    state.holding.stage = "PIZZA_BURNT"
+    state.on_hold("DELIVERY")
+    assert state.time_left == 0                         # never below 0
+
+    # Pictures
+    assert image_name("CHEESE") == "cheese_raw"
+    assert image_name("CHEESE", chops=3) == "cheese_cut_3"
+    assert image_name("PEPPERS_CHOPPED") == "peppers_sliced"
+    assert image_name("DOUGH_SPUN") == "dough_spun"
+    import numpy as np
+    from types import SimpleNamespace
+    from zones import make_zones
+    test_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    draw_item(test_frame, "SOMETHING_WITHOUT_A_PICTURE", 10, 10, 50)  # falls back to text, no crash
+    state = GameState()
+    state.holding = "CHEESE"
+    for corner in [(0.0, 0.0), (1.0, 1.0)]:
+        palm = SimpleNamespace(x=corner[0], y=corner[1])  # a fake palm, like MediaPipe's
+        state.draw(test_frame, make_zones(), [palm])     # hand at the very edge: no crash
+
+    print("All game state tests passed!")

@@ -67,7 +67,7 @@ while cap.isOpened():
     # Draw the HUD (not interactible)
     draw_hud(frame)
     # Draw the game zones (interactible)
-    state.draw(frame, zones)
+    state.draw(frame, zones, palms)
     cv2.imshow("Zones", frame)
     key = cv2.waitKey(1) & 0xFF
     if key == ord('s'):
