@@ -14,7 +14,6 @@ players = [
 ]
 face_filter = FaceFilter()
 
-
 cap = cv2.VideoCapture(0)
 fps = int(round(cap.get(5)))
 frame_width = int(cap.get(3))
@@ -109,9 +108,14 @@ while cap.isOpened():
 
     cv2.imshow("Out", frame)
 
-    # Press Q to stop
-    if cv2.waitKey(1) & 0xFF == ord("q"):
+#for intergration with main main we need to trigger reactions differently than below
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord("q"):
         break
+    elif key == ord("1"):
+        face_filter.cycle_reaction(0)
+    elif key == ord("2"):
+        face_filter.cycle_reaction(1)
 
 # When everything done, release the video capture and writing object
 cap.release()
