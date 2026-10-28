@@ -1,17 +1,28 @@
-import cv2
-from zones import INGREDIENTS
+import math
 
+import cv2
+from matplotlib import text
+from zones import *
+import random
+
+import zones
 
 # List of ingredient names
 INGREDIENT_NAMES = [name for name, color in INGREDIENTS]
 
-# List of surfaces in the game
-SURFACES = ["CHOPPING COUNTER", "TOPPING STATION", "OVEN", "BANK", "DELIVERY"]
+# List of bank slots
+BANK_NAMES = [f"BANK {i + 1}" for i in range(BANK_SLOTS)]
 
-# Game settings
+# List of surfaces in the game
+SURFACES = ["CHOPPING COUNTER", "TOPPING STATION", "OVEN", "DELIVERY"] + BANK_NAMES
+
+# Gameplay settings
 CHOPS_NEEDED = 4
 BAKE_TIME = 5
 BURN_TIME = 10
+
+# Game Time
+GAME_TIME = 90
 
 ACCEPTS = {
     "TOPPING STATION": ["DOUGH_SPUN"],
@@ -30,6 +41,17 @@ class GameState:
         self.chops = 0
         # Initialize oven timer to 0
         self.oven_start = 0
+        # Initialize the order list to an empty list
+        self.order = []
+        self.new_order()
+        # Initialize the game start time
+        self.time_left = GAME_TIME
+        self.timer_running = False
+        self.last_now = None
+        
+    def new_order(self):
+        amount = random.randint(1, 3)
+        self.order = random.sample(INGREDIENT_NAMES, amount)
         
     def on_hold(self, zone_name):
         # If the player is hovering over a zone that is either an ingredient or dough
@@ -76,8 +98,15 @@ class GameState:
     def on_spin(self):
         if self.holding == "DOUGH":
             self.holding = "DOUGH_SPUN"
-            
+    
+    def toggle_timer(self):
+        self.timer_running = not self.timer_running
+    
+    # Logic for how long the pizza has to stay in the oven
     def update(self, now):
+        if self.timer_running and self.last_now is not None:
+            self.time_left = max(self.time_left - (now - self.last_now), 0)
+        self.last_now = now
         item = self.items["OVEN"]
         if item is None:
             self.oven_start = None
@@ -98,6 +127,14 @@ class GameState:
             item = self.items.get(zone.name)
             if item is not None:
                 cv2.putText(frame, item, (int(zone.x1 * w) + 5, int(zone.y1 * h) + 55), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-                cv2.putText(frame, f"Holding: {self.holding}", (int(0.58 * w), int(0.74 * h)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 if zone.name == "CHOPPING COUNTER" and item in INGREDIENT_NAMES:
                     cv2.putText(frame, f"Chops: {self.chops}/{CHOPS_NEEDED}", (int(zone.x1 * w) + 5, int(zone.y1 * h) + 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        # Recipe: one line per topping, inside the recipe box
+        for i, topping in enumerate(self.order):
+            cv2.putText(frame, topping, (int(0.58 * w) + 5, int(0.02 * h) + 45 + i * 17), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        # Seconds left, centred in the timer circle
+        text = str(math.ceil(self.time_left))
+        (text_w, text_h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)
+        cx, cy = int(0.51 * w), int(0.12 * h)
+        cv2.putText(frame, text, (cx - text_w // 2, cy + text_h // 2), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 2)
+        cv2.putText(frame, f"Holding: {self.holding}", (int(0.58 * w), int(0.74 * h)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)

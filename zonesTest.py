@@ -3,7 +3,7 @@ import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from zones import make_zones, draw_hud
+from zones import *
 from game_state import GameState
 from motion_detectors.ChopDetector import ChopDetector
 
@@ -71,9 +71,12 @@ while cap.isOpened():
     cv2.imshow("Zones", frame)
     key = cv2.waitKey(1) & 0xFF
     if key == ord('s'):
-        state.on_spin()  # shortcut: keyboard stand-in for the spin motion, replace with a SpinDetector
+        state.on_spin()
     if key == ord('q'):
         break
+    if key == ord(' '):
+        state.toggle_timer()
+        
 
 cap.release()
 cv2.destroyAllWindows()

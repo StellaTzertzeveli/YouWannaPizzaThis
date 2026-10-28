@@ -1,5 +1,7 @@
 import cv2
 
+
+BANK_SLOTS = 4
 # List of touples containing the name and color of each ingredient zone
 INGREDIENTS = [
     ("CHEESE", (0, 220, 255)),
@@ -72,8 +74,11 @@ class Zone:
             
 def make_zones():
     # Initialize zones with their respective coordinates and colors
-    zones = [Zone("BANK", 0.45, 0.25, 0.55, 0.75, (0, 200, 255))
-             ]
+    zones = []
+    slot_height = (0.98-0.24)/BANK_SLOTS
+    for i in range(BANK_SLOTS):
+        top = 0.24 + i * slot_height
+        zones.append(Zone(f"BANK {i+1}", 0.45, top + 0.01, 0.55, top + slot_height - 0.01, (0, 200, 255)))
     
     
     

@@ -106,7 +106,6 @@ while cap.isOpened():
     key_input = cv2.waitKey(1) & 0xFF
     if  key_input == ord('v'):
         thumbsupDetector.start_detection()
-        print('started detection chopDetector')
     # E. Display Camera Feed
     cv2.imshow("MediaPipe Pose Tracking", frame)
 

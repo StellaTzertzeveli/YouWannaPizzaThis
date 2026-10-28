@@ -33,7 +33,6 @@ class ChopDetector(ActionDetector):
 
     def update_state(self, should_print):
         #Here we check if the state of the detector should be changed!
-        print('calculating state for ChopDetector')
         sum_hand_history = [
             tuple(
                 sum(coords[i] for coords in (frame[finger_str] for finger_str in self.mp_dict.values())) / 5
