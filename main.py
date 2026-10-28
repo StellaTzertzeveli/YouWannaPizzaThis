@@ -3,8 +3,9 @@ import torch
 from PIL import Image
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from facenet_pytorch import MTCNN, InceptionResnetV1
-from face_filters.face_class import FaceFilter
 
+#classes
+from face_filters.face_class import FaceFilter
 from player import Player
 
 players = [
@@ -43,7 +44,6 @@ MIN_CONFIDENCE = 0.7
 
 while cap.isOpened():
     ret, frame = cap.read()
-
     if not ret:
         break
 
