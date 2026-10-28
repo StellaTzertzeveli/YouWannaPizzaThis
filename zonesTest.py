@@ -56,6 +56,7 @@ while cap.isOpened():
             state.on_chop()
             chop_detector.reset_chop_count()
 
+    state.update(now)
     for zone in zones:
         inside = any(zone.contains(p.x, p.y) for p in palms)
         if zone.update(inside, now):
@@ -68,7 +69,10 @@ while cap.isOpened():
     # Draw the game zones (interactible)
     state.draw(frame, zones)
     cv2.imshow("Zones", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord('s'):
+        state.on_spin()  # shortcut: keyboard stand-in for the spin motion, replace with a SpinDetector
+    if key == ord('q'):
         break
 
 cap.release()

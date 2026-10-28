@@ -1,13 +1,24 @@
 import cv2
 from zones import INGREDIENTS
 
+
 # List of ingredient names
 INGREDIENT_NAMES = [name for name, color in INGREDIENTS]
 
 # List of surfaces in the game
 SURFACES = ["CHOPPING COUNTER", "TOPPING STATION", "OVEN", "BANK", "DELIVERY"]
 
+# Game settings
 CHOPS_NEEDED = 4
+BAKE_TIME = 5
+BURN_TIME = 10
+
+ACCEPTS = {
+    "TOPPING STATION": ["DOUGH_SPUN"],
+    "OVEN": ["PIZZA"],
+    "DELIVERY": ["BAKED_PIZZA"]
+    
+}
 
 class GameState:
     def __init__(self):
@@ -17,6 +28,8 @@ class GameState:
         self.items = {name: None for name in SURFACES}
         # Initialize the number of chops to 0
         self.chops = 0
+        # Initialize oven timer to 0
+        self.oven_start = 0
         
     def on_hold(self, zone_name):
         # If the player is hovering over a zone that is either an ingredient or dough
@@ -34,17 +47,23 @@ class GameState:
                 on_surface = self.items[zone_name]
                 # If there is nothing on the surface and the player is holding something
                 if on_surface is None and self.holding is not None:
+                    if zone_name in ACCEPTS and self.holding not in ACCEPTS[zone_name]:
+                        # If the surface is a station that only accepts certain items, and the player is holding an item that is not accepted, do nothing
+                        return
                     # Place the held item on the surface and stop holding it
                     self.items[zone_name] = self.holding
                     self.holding = None
                     if zone_name == "CHOPPING COUNTER":
-                        self.chops = 0                       # a freshly placed ingredient starts unchopped
+                        self.chops = 0       
+                    if zone_name == "TOPPING STATION":
+                        self.items[zone_name] = "PIZZA"
+                        # a freshly placed ingredient starts unchopped
                 # If there is something on the surface and the player isnt holding anything
                 elif on_surface is not None and self.holding is None:
                     # Pick up the item from the surface and make the zone stop holding it
                     self.holding = on_surface
                     self.items[zone_name] = None
-                    
+    # When items are on the chopping counter, the player can chop them. After a certain number of chops, the item becomes chopped.
     def on_chop(self):
         item = self.items["CHOPPING COUNTER"]
         if item in INGREDIENT_NAMES:
@@ -52,6 +71,26 @@ class GameState:
             if self.chops >= CHOPS_NEEDED:
                 self.items["CHOPPING COUNTER"] = item + "_CHOPPED"
                 self.chops = 0
+    
+    # When the player is holding dough, they can spin it to make it pizza dough.
+    def on_spin(self):
+        if self.holding == "DOUGH":
+            self.holding = "DOUGH_SPUN"
+            
+    def update(self, now):
+        item = self.items["OVEN"]
+        if item is None:
+            self.oven_start = None
+            return
+        if self.oven_start is None:
+            self.oven_start = now
+        time_in_oven = now - self.oven_start
+        if item == "PIZZA" and time_in_oven >= BAKE_TIME:
+            self.items["OVEN"] = "BAKED_PIZZA"
+        elif item == "BAKED_PIZZA" and time_in_oven >= BURN_TIME:
+            self.items["OVEN"] = "BURNT_PIZZA"
+        
+        
     
     def draw(self, frame, zones):
         h, w, _ = frame.shape
