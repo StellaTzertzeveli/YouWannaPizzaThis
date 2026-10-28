@@ -4,7 +4,7 @@ import numpy as np
 import trimesh
 import pyrender
 from PIL import Image
-from math import atan, degrees
+from math import atan, atan2, degrees
 from pathlib import Path
 
 HATS = [
@@ -24,11 +24,6 @@ HATS = [
         "color": [0.25, 0.45, 0.9, 1.0],
     },
 ]
-
-HAT_BY_TRACK_ID = {
-    "1": 0,
-    "2": 1,
-}
 
 REACTION_PNG_PATHS = {
     "angry": "reactions/eyebrows.png",
@@ -97,7 +92,7 @@ def draw_face_reaction(frame, face, reaction, reaction_images, width, height):
     eye_left = point(33)
     eye_right = point(263)
     eye_center = (eye_left + eye_right) / 2.0
-    roll = degrees(np.atan2(
+    roll = degrees(atan2(
         eye_right[1] - eye_left[1],
         eye_right[0] - eye_left[0],
     ))
@@ -209,9 +204,8 @@ class FaceFilter:
         self.player_reactions = [None, None]
         self.renderer = None
         self.renderer_size = None
+        self.hat_assignments = {}
 
-        # Resolve assets relative to this file, not the directory
-        # from which main.py happens to be launched.
         asset_dir = Path(__file__).resolve().parent
 
         self.hat_meshes = [
@@ -236,9 +230,15 @@ class FaceFilter:
             for name, path in REACTION_PNG_PATHS.items()
         }
 
-    def process_frame(self, frame, tracked_players=()):
+    def process_frame(self, frame, tracked_players=(), active_track_ids=None):
         """Add the hats and reactions to a BGR frame and return it."""
         height, width = frame.shape[:2]
+
+        # at the start of process_frame
+        if active_track_ids is not None:
+            active = {str(t) for t in active_track_ids}
+            self.hat_assignments = {k: v for k, v in self.hat_assignments.items() if k in active}
+            matched_faces = []  # (face, hat_index) pairs, used for reactions below
 
         if self.renderer_size != (width, height):
             if self.renderer is not None:
@@ -283,6 +283,7 @@ class FaceFilter:
 
             cv_to_gl = np.diag([1.0, -1.0, -1.0, 1.0])
             hats_added = 0
+            print("faces:", len(faces), "tracked:", len(tracked_players), "hats:", hats_added)
             unmatched_players = list(tracked_players)
 
             for face in faces:
@@ -301,9 +302,17 @@ class FaceFilter:
                     continue
 
                 track_id, _ = unmatched_players.pop(match_index)
-                hat_index = HAT_BY_TRACK_ID.get(str(track_id))
-                if hat_index is None:
-                    continue
+                track_key = str(track_id)
+
+                if track_key not in self.hat_assignments:
+                    used = set(self.hat_assignments.values())
+                    free = [i for i in range(len(HATS)) if i not in used]
+                    if not free:
+                        continue
+                    self.hat_assignments[track_key] = free[0]
+
+                hat_index = self.hat_assignments[track_key]
+                matched_faces.append((face, hat_index))
 
                 hat = HATS[hat_index]
                 hat_mesh = self.hat_meshes[hat_index]
@@ -331,7 +340,7 @@ class FaceFilter:
                     + frame.astype(np.float32) * (1.0 - alpha)
                 ).astype(np.uint8)
 
-        for player_index, face in enumerate(faces[:2]):
+        for face, player_index in matched_faces:
             reaction = self.player_reactions[player_index]
             if reaction is not None:
                 draw_face_reaction(
