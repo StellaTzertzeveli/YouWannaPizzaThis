@@ -8,17 +8,17 @@ from math import atan, atan2, degrees
 from pathlib import Path
 
 HATS = [
-    #a different hat for the chef and for the sous chef
+    #hat for the chef and rat for sous chef
     {
         "obj": "3D_models/chef_hat.obj",
-        "texture": None,
+        "texture": "textures/hat.jpeg",
         "width": 190.0,
         "offset": [0.0, 70.0, -50.0],
         "color": [0.9, 0.7, 0.25, 1.0],
     },
     {
-        "obj": "3D_models/Ushanka.obj",
-        "texture": None,
+        "obj": "3D_models/rat.obj",
+        "texture": "textures/rat.png",
         "width": 190.0,
         "offset": [0.0, 70.0, -70.0],
         "color": [0.25, 0.45, 0.9, 1.0],
@@ -123,12 +123,17 @@ def load_hat(obj_path, texture_path, target_width, color):
     uv = getattr(mesh.visual, "uv", None)
     material = None
 
+    if texture_path and uv is None:
+        print(f"Warning: {obj_path} has no UV coordinates, texture ignored")
+
     if uv is not None and texture_path:
         texture_bgr = cv2.imread(texture_path)
         if texture_bgr is None:
             raise FileNotFoundError(f"Could not load {texture_path}")
 
         texture_rgb = cv2.cvtColor(texture_bgr, cv2.COLOR_BGR2RGB)
+        # texture_rgb = cv2.flip(texture_rgb, 0)   # uncomment if the texture looks upside down
+
         material = pyrender.MetallicRoughnessMaterial(
             baseColorTexture=pyrender.Texture(
                 source=texture_rgb,
