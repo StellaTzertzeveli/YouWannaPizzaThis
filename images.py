@@ -2,14 +2,19 @@ import os
 import cv2
 import numpy as np
 
-FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "ingredients")
+ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+FOLDERS = [os.path.join(ASSETS, "ingredients"), os.path.join(ASSETS, "zone_sprites")]  # where pictures are searched, in this order
 cache = {}  # name -> loaded image (or None if the file doesn't exist), so each file is read only once
 
 
 def load(name):
     if name not in cache:
-        path = os.path.join(FOLDER, name + ".png")
-        img = cv2.imread(path, cv2.IMREAD_UNCHANGED) if os.path.exists(path) else None
+        img = None
+        for folder in FOLDERS:
+            path = os.path.join(folder, name + ".png")
+            if os.path.exists(path):
+                img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+                break
         if img is not None:
             if img.shape[2] == 3:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)  # no transparency in the file: make it fully solid
@@ -27,6 +32,8 @@ def draw_image(frame, name, x, y, size):
     h, w = img.shape[:2]
     scale = size / max(h, w)  # shrink the longest side to 'size', keep the shape
     img = cv2.resize(img, (max(1, int(w * scale)), max(1, int(h * scale))))
+    x += (size - img.shape[1]) // 2  # centre a wide or tall picture inside the square
+    y += (size - img.shape[0]) // 2
     if x < 0:
         img, x = img[:, -x:], 0  # sticks out on the left: cut that part off
     if y < 0:
@@ -40,3 +47,48 @@ def draw_image(frame, name, x, y, size):
     region = frame[y:y + h, x:x + w]
     region[:] = (img[:, :, :3] * alpha + region * (1 - alpha)).astype(np.uint8)
     return True
+
+
+def draw_fill(frame, name, x1, y1, x2, y2):
+    # Stretches the image to exactly fill the rectangle (x1, y1)-(x2, y2). False if there is no such image.
+    img = load(name)
+    if img is None or x2 <= x1 or y2 <= y1:
+        return False
+    key = (name, x2 - x1, y2 - y1)
+    if key not in cache:
+        cache[key] = cv2.resize(img, (x2 - x1, y2 - y1))  # resize once per size, not every frame
+    img = cache[key]
+    alpha = img[:, :, 3:] / 255.0
+    region = frame[y1:y2, x1:x2]
+    region[:] = (img[:, :, :3] * alpha + region * (1 - alpha)).astype(np.uint8)
+    return True
+
+
+if __name__ == "__main__":
+    # A fake 4x4 image: left half solid red, right half see-through
+    test = np.zeros((4, 4, 4), dtype=np.uint8)
+    test[:, :2] = (0, 0, 255, 255)
+    cache["test"] = test
+    frame = np.full((10, 10, 3), 100, dtype=np.uint8)
+    assert draw_image(frame, "test", 0, 0, 4)
+    assert frame[0, 0].tolist() == [0, 0, 255]    # solid part: red
+    assert frame[0, 3].tolist() == [100, 100, 100]  # see-through part: background unchanged
+    assert draw_image(frame, "test", 8, 8, 4)     # partly off the bottom-right: no crash
+    frame = np.full((10, 10, 3), 100, dtype=np.uint8)
+    assert draw_image(frame, "test", -1, -2, 4)   # partly off the top-left: no crash
+    assert frame[0, 0].tolist() == [0, 0, 255]    # the visible part of the red half landed in the corner
+    assert draw_image(frame, "test", 50, 50, 4)   # completely outside: no crash
+    assert draw_image(frame, "does_not_exist", 0, 0, 4) is False
+
+    cache["big"] = np.full((100, 100, 4), 255, dtype=np.uint8)  # a solid white 100x100 picture
+    frame = np.zeros((50, 50, 3), dtype=np.uint8)
+    draw_image(frame, "big", 0, 0, 10)
+    assert frame[20, 20].tolist() == [0, 0, 0]  # shrunk to 10x10, so (20, 20) stays black
+
+    # draw_fill stretches to the exact rectangle
+    frame = np.zeros((50, 50, 3), dtype=np.uint8)
+    assert draw_fill(frame, "big", 10, 20, 40, 30)
+    assert frame[25, 35].tolist() == [255, 255, 255]  # inside the rectangle: filled
+    assert frame[35, 35].tolist() == [0, 0, 0]        # below it: untouched
+    assert draw_fill(frame, "does_not_exist", 0, 0, 10, 10) is False
+    print("All image tests passed!")

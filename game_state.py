@@ -30,7 +30,7 @@ GAME_TIME = 90
 
 # Surfaces that only accept certain items. Surfaces not listed here accept anything.
 ACCEPTS = {
-    "TOPPING STATION": ["DOUGH_SPUN"],
+    "TOPPING STATION": ["DOUGH_SPUN", "PIZZA"],
     "OVEN": ["PIZZA"],
     "DELIVERY": ["PIZZA_BAKED", "PIZZA_BURNT"],
 }
@@ -195,12 +195,10 @@ class GameState:
             if zone.name in INGREDIENT_NAMES or zone.name == "DOUGH":
                 item = zone.name  # a box always shows what you can grab from it
             if item is not None:
-                x, y = int(zone.x1 * w) + 5, int(zone.y1 * h) + 32  # just under the zone's name
                 size = min(int((zone.x2 - zone.x1) * w), int((zone.y2 - zone.y1) * h) - 35) - 10
+                cx, cy = int((zone.x1 + zone.x2) / 2 * w), int((zone.y1 + zone.y2) / 2 * h)  # centre of the zone
                 chops = self.chops if zone.name == "CHOPPING COUNTER" else 0
-                draw_item(frame, item, x, y, size, chops)
-                if zone.name == "CHOPPING COUNTER" and item in INGREDIENT_NAMES:
-                    cv2.putText(frame, f"Chops: {self.chops}/{CHOPS_NEEDED}", (x + size + 10, y + size // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                draw_item(frame, item, cx - size // 2, cy - size // 2, size, chops)
         # Recipe: one picture per topping, side by side inside the recipe box
         size = int(0.18 * h) - 35
         for i, topping in enumerate(self.order):

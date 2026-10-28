@@ -1,4 +1,5 @@
 import cv2
+from images import draw_fill
 
 
 BANK_SLOTS = 4
@@ -60,6 +61,7 @@ class Zone:
         h, w, _ = frame.shape
         x1, y1 = int(self.x1 * w), int(self.y1 * h)
         x2, y2 = int(self.x2 * w), int(self.y2 * h)
+        draw_fill(frame, self.name.lower().replace(" ", "_"), x1, y1, x2, y2)  # background picture, e.g. chopping_counter.png, if there is one
         thickness = 6 if progress > 0 else 2
         cv2.rectangle(frame, (x1, y1), (x2, y2), self.color, thickness)
                 # Shrink the text until it fits inside the box
