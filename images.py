@@ -10,8 +10,8 @@ cache = {}  # name -> loaded image (or None if the file doesn't exist), so each 
 def load(name):
     if name not in cache:
         img = None
-        for folder in FOLDERS:
-            path = os.path.join(folder, name + ".png")
+        paths = [os.path.join(folder, name + ext) for folder in FOLDERS for ext in (".png", ".jpg")]
+        for path in paths:
             if os.path.exists(path):
                 img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
                 break
@@ -63,6 +63,12 @@ def draw_fill(frame, name, x1, y1, x2, y2):
     region[:] = (img[:, :, :3] * alpha + region * (1 - alpha)).astype(np.uint8)
     return True
 
+def blend_person(frame, camera, mask):
+    # Puts the camera image back wherever the mask says "person" (1), keeps the frame wherever it says "background" (0)
+    if mask.shape[:2] != frame.shape[:2]:
+        mask = cv2.resize(mask, (frame.shape[1], frame.shape[0]))
+    m = mask.reshape(mask.shape[0], mask.shape[1], 1)  # always (height, width, 1), so it multiplies all 3 colour channels
+    frame[:] = (camera * m + frame * (1 - m)).astype(np.uint8)
 
 if __name__ == "__main__":
     # A fake 4x4 image: left half solid red, right half see-through

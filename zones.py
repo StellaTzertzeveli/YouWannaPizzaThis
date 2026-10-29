@@ -108,6 +108,8 @@ def make_zones():
 def draw_hud(frame):
     # Things that are only shown on screen
     h, w, _ = frame.shape
+    # Make art fill the recipe box
+    draw_fill(frame, "recipe", int(0.58 * w), int(0.02 * h), int(0.99 * w), int(0.20 * h))
     # Recipe box above the Chef, empty for now
     cv2.rectangle(frame, (int(0.58 * w), int(0.02 * h)), (int(0.99 * w), int(0.20 * h)),
                   (255, 255, 255), 2)
