@@ -7,10 +7,12 @@ class ThumbsupDetector(ActionDetector):
         self.mp_dict = {0: 'wrist', 2: 'thumb_base', 3: 'thumb_knuckle', 4: 'thumb_tip', 8: 'index_tip', 12: 'middle_tip', 16: 'ring_tip', 20: 'pinky_tip', 5: 'index_knuckle', 17: 'pinky_knuckle'}
         self.state = False
         self.count = 0
-        self.max_value = 60
+        self.max_value = 30
 
-        self.dist_threshold_wrist = 0.30 #minimum distance between secondary fingers and the wrist
-        self.angle_threshold_thumb = 35
+        self.dist_threshold_wrist = 0.22 #minimum distance between secondary fingers and the wrist (was 0.30: let a half-open hand pass as a fist)
+        self.angle_threshold_thumb = 20  # was 35: let a thumb angled well off vertical still count
+        self.thumb_extension_ratio = 1.3  # was 1.3; thumb_tip must be this many times farther from the wrist
+        # than thumb_base is, so a thumb tucked into the fist (not actually "up") doesn't pass
 
     def stop_detection(self):
         self.should_detect = False
@@ -34,11 +36,23 @@ class ThumbsupDetector(ActionDetector):
 
         max_dist = max( [np.linalg.norm(u-wrist) for u in secondary_fingers] )
         if max_dist > self.dist_threshold_wrist:
+            # shortcut: without this reset, a single stray frame that happens to match (e.g. while
+            # grabbing or chopping) would sit in self.count forever, so scattered incidental matches
+            # across an entire session could add up to a false trigger instead of requiring a real
+            # continuous hold. Upgrade: a short grace window (reset after N consecutive misses, not 1)
+            # if this proves too strict for a real held gesture with brief tracking jitter.
+            self.count = 0
             return
 
         #check if the thumb is pointing in the same direction as hand is
         thumb_base = fingers[1]
         thumb_tip = fingers[3]
+
+        # the thumb itself has to actually stick out, not just be angled right while tucked into the fist
+        thumb_extension = np.linalg.norm(thumb_tip - wrist) / max(np.linalg.norm(thumb_base - wrist), 1e-6)
+        if thumb_extension < self.thumb_extension_ratio:
+            self.count = 0
+            return
 
         hand_direction = knuckles[0] - knuckles[1] #index knuckle - pinky knuckle
 
@@ -46,6 +60,7 @@ class ThumbsupDetector(ActionDetector):
         angle = self.angle_between(thumb_diff_vector, hand_direction)
         # print(angle, angle < self.angle_threshold_thumb)
         if abs(angle) > self.angle_threshold_thumb:
+            self.count = 0
             return
 
 

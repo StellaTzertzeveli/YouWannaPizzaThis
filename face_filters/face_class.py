@@ -1,0 +1,402 @@
+import time
+import cv2
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+import numpy as np
+import trimesh
+import pyrender
+from OpenGL.arrays import GLuintArray
+from math import atan, atan2, degrees
+from pathlib import Path
+
+# shortcut: PyOpenGL's glGenTextures(count=1) special-cases count==1 into a bare ctypes
+# scalar instead of a proper array, which its own array-type dispatcher then can't handle
+# ("No array-type handler for type _ctypes.type") -- a long-standing, still-unfixed PyOpenGL
+# bug (reported to the PyOpenGL-Devel list in 2014). pyrender's texture.py imports
+# glGenTextures via `from OpenGL.GL import *`, so patching OpenGL.GL itself won't reach it;
+# patch the name already bound inside pyrender's texture module instead, forcing the
+# (working) array path for every count. Upgrade: drop this once PyOpenGL fixes the bug upstream.
+def _patched_glGenTextures(count=1):
+    textures = GLuintArray.zeros((count,))
+    pyrender.texture.glGenTextures.__wrapped__(count, textures)
+    return int(textures[0]) if count == 1 else [int(t) for t in textures]
+_patched_glGenTextures.__wrapped__ = pyrender.texture.glGenTextures.baseFunction
+pyrender.texture.glGenTextures = _patched_glGenTextures
+
+HATS = [
+    #hat for the chef and rat for sous chef
+    {
+        "obj": "3D_models/chef_hat.obj",
+        "texture": "textures/hat.jpeg",
+        "width": 190.0,
+        "offset": [0.0, 70.0, -50.0],
+    },
+    {
+        "obj": "3D_models/rat.obj",
+        "texture": "textures/rat.png",
+        "width": 140.0,
+        "offset": [0.0, 70.0, -70.0],
+    },
+]
+
+HAT_FOR_ROLE = {"CHEF": 0, "SOUS": 1}  # which HATS entry (and player_reactions slot) each role wears
+
+REACTION_PNG_PATHS = {
+    "angry": "reactions/eyebrows.png",
+    "sad": "reactions/tears.png",
+}
+
+REACTION_CYCLE = [None, "angry", "sad"]
+
+def load_reaction_png(path):
+    #load a PNG file of a reaction + convert to BGRA if number of dimensions is grayscale or 3 channel
+    image = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    if image.ndim == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGRA)
+    elif image.shape[2] == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2BGRA)
+    return image
+
+def overlay_png(frame, png, center, target_width, roll_degrees=0.0):
+    #shows reactions
+    target_width = int(round(target_width))
+    if target_width <= 0:
+        return
+
+    source_h, source_w = png.shape[:2]
+    target_height = max(1, int(round(source_h * target_width / source_w)))
+    resized = cv2.resize(png, (int(target_width), target_height))
+
+    #rotate the PNG with the face around its center
+    matrix = cv2.getRotationMatrix2D( (target_width / 2.0, target_height / 2.0), -roll_degrees,1.0,)
+    rotated = cv2.warpAffine(resized,matrix,(target_width, target_height),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_CONSTANT,borderValue=(0, 0, 0, 0))
+
+    frame_h, frame_w = frame.shape[:2]
+    center_x, center_y = (int(round(value)) for value in center)
+    x0 = center_x - target_width // 2
+    y0 = center_y - target_height // 2
+    x1 = x0 + target_width
+    y1 = y0 + target_height
+
+    #clip overlay to visible
+    visible_x0 = max(0, x0)
+    visible_y0 = max(0, y0)
+    visible_x1 = min(frame_w, x1)
+    visible_y1 = min(frame_h, y1)
+
+    if visible_x0 >= visible_x1 or visible_y0 >= visible_y1:
+        #clip to frame, if nothing is visible, return
+        return
+
+    overlay = rotated[int(visible_y0 - y0):int(visible_y1 - y0),
+              int(visible_x0 - x0):int(visible_x1 - x0)]
+
+    roi = frame[visible_y0:visible_y1, visible_x0:visible_x1]
+    alpha = overlay[:, :, 3:4].astype(np.float32) / 255.0
+    roi[:] = (
+        #result = png_color × alpha + background × (1 − alpha)
+        overlay[:, :, :3].astype(np.float32) * alpha
+        + roi.astype(np.float32) * (1.0 - alpha)
+    ).astype(np.uint8)
+
+
+def draw_face_reaction(frame, face, reaction, reaction_images, width, height):
+    def point(index):
+        #normalize the landmark coordinates to pixel coordinates
+        landmark = face[index]
+        return np.array([landmark.x * width, landmark.y * height])
+
+    eye_left = point(33)
+    eye_right = point(263)
+    eye_center = (eye_left + eye_right) / 2.0
+    roll = degrees(atan2(
+        #angle between 33 and 263 is head's tilt
+        eye_right[1] - eye_left[1],
+        eye_right[0] - eye_left[0],
+    ))
+
+    face_left = point(234)
+    face_right = point(454)
+    face_width = np.linalg.norm(face_right - face_left)
+
+    if reaction == "angry":
+        brow_left = point(105)
+        brow_right = point(334)
+        center = (brow_left + brow_right) / 2.0
+        target_width = np.linalg.norm(brow_right - brow_left) * 1.6
+    elif reaction == "sad":
+        center = eye_center + np.array([0, face_width * 0.30])
+        target_width = face_width * 0.8
+    else:
+        return
+
+    overlay_png(frame,reaction_images[reaction],center,target_width,roll)
+
+def load_hat(obj_path, texture_path, target_width):
+    #load .obj
+    mesh = trimesh.load(obj_path, force="mesh", process=False)
+    #get UV coordinates
+    uv = getattr(mesh.visual, "uv", None)
+
+    #assign material based on UV coords and texture
+    if uv is not None and texture_path:
+        texture_bgr = cv2.imread(texture_path)
+        texture_rgb = cv2.cvtColor(texture_bgr, cv2.COLOR_BGR2RGB)
+
+
+        material = pyrender.MetallicRoughnessMaterial(
+            baseColorTexture=pyrender.Texture(source=texture_rgb, source_channels="RGB"),
+            metallicFactor=0.0,
+            roughnessFactor=0.8,
+        )
+
+    else:
+        material = pyrender.MetallicRoughnessMaterial(
+            metallicFactor=0.0,
+            roughnessFactor=0.8,
+        )
+
+    #scale the models accordingly and convert to pyrender mesh with smooth shading
+    bounds = mesh.bounds
+    center_x = (bounds[0, 0] + bounds[1, 0]) / 2.0
+    base_y = bounds[0, 1]
+    center_z = (bounds[0, 2] + bounds[1, 2]) / 2.0
+    mesh.vertices -= np.array([center_x, base_y, center_z])
+    model_width = mesh.bounds[1, 0] - mesh.bounds[0, 0]
+    mesh.apply_scale(target_width / model_width)
+    return pyrender.Mesh.from_trimesh(mesh, material=material, smooth=True)
+
+
+def get_image_point(face_landmarks, index, width, height):
+    #break landmark into x pixels and y pixels
+    landmark = face_landmarks[index]
+    return [landmark.x * width, landmark.y * height]
+
+
+def estimate_head_pose(face_landmarks, width, height, camera_matrix):
+    # Approximate 3D face points in millimeters, corresponding to the landmarks below.
+    face_3d = np.array([
+        #landmarks for the average face
+        #face has its own coordinate system
+        [0.0,   0.0,   0.0],     # nose tip: landmark 1/ origin
+        [0.0, -63.0, -12.0],     # chin: landmark 152
+        [-43.0, 32.0, -26.0],    # outer eye corner: landmark 33
+        [43.0,  32.0, -26.0],    # outer eye corner: landmark 263
+        [-28.0, -28.0, -24.0],   # mouth corner: landmark 61
+        [28.0,  -28.0, -24.0],   # mouth corner: landmark 291
+    ], dtype=np.float64)
+
+    landmark_indices = [1, 152, 33, 263, 61, 291]
+    face_2d = np.array([
+        get_image_point(face_landmarks, index, width, height)
+        for index in landmark_indices
+    ], dtype=np.float64)
+
+    distortion = np.zeros((4, 1), dtype=np.float64)
+    success, rotation_vector, translation_vector = cv2.solvePnP(
+        #returns rotation and translation vector
+        face_3d,
+        face_2d,
+        camera_matrix,
+        distortion,
+        flags=cv2.SOLVEPNP_ITERATIVE,
+    )
+
+    rotation, _ = cv2.Rodrigues(rotation_vector) #converts the rotation vector to a 3×3 matrix
+    #transform points from face space into camera space
+    face_pose = np.eye(4, dtype=np.float64)
+    face_pose[:3, :3] = rotation
+    face_pose[:3, 3] = translation_vector.reshape(3)
+    return face_pose
+
+class FaceFilter:
+    def __init__(self):
+        self.player_reactions = [None, None]
+        self.renderer = None
+        self.renderer_size = None
+        self.latest_face_result = None  # filled in by _face_callback, one frame behind -- same lag hand/pose already have
+
+        asset_dir = Path(__file__).resolve().parent
+
+        self.hat_meshes = [
+            load_hat(
+                str(asset_dir / hat["obj"]),
+                str(asset_dir / hat["texture"]),
+                hat["width"],
+            )
+            for hat in HATS
+        ]
+
+        # Async (LIVE_STREAM), like the hand/pose/segmentation landmarkers in zonesTest.py: running this
+        # synchronously (IMAGE mode, blocking .detect() every frame) was stalling the whole game loop.
+        # Same project root as hand_landmarker.task / pose_landmarker.task, loaded the same way (run from the project root)
+        self.face_landmarker = vision.FaceLandmarker.create_from_options(
+            vision.FaceLandmarkerOptions(
+                base_options=python.BaseOptions(model_asset_path="face_landmarker.task"),
+                running_mode=vision.RunningMode.LIVE_STREAM,
+                num_faces=2,
+                min_face_detection_confidence=0.5,
+                min_face_presence_confidence=0.5,
+                min_tracking_confidence=0.5,
+                result_callback=self._face_callback,
+            )
+        )
+
+        self.reaction_images = {
+            name: load_reaction_png(str(asset_dir / path))
+            for name, path in REACTION_PNG_PATHS.items()
+        }
+
+    def _face_callback(self, result, output_image, timestamp_ms):
+        self.latest_face_result = result
+
+    def process_frame(self, frame, tracked_players=(), role_by_track_id=None):
+        #Add the hats and reactions to a BGR frame and return it. role_by_track_id maps a tracked
+        #player's track id -> "CHEF"/"SOUS", so each player always gets their own role's hat
+        #(not just whichever hat happened to still be free when their face was first seen).
+        height, width = frame.shape[:2]
+        matched_faces = []
+        role_by_track_id = role_by_track_id or {}
+
+        if self.renderer_size != (width, height):
+            if self.renderer is not None:
+                self.renderer.delete()
+
+            self.renderer = pyrender.OffscreenRenderer(width, height)
+            self.renderer_size = (width, height)
+
+        focal_length = float(width)
+        camera_matrix = np.array([
+            #focal length in pixels, principal point at the center of the image
+            [focal_length, 0.0, width / 2.0],
+            [0.0, focal_length, height / 2.0],
+            [0.0, 0.0, 1.0],
+        ], dtype=np.float64)
+
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+        self.face_landmarker.detect_async(mp_image, int(time.time() * 1000))
+        result = self.latest_face_result
+        faces = result.face_landmarks if result is not None else []
+        faces = sorted(faces, key=lambda face: face[1].x)
+
+        if faces:
+            #for each face est. head pose, match nose tip to tracked player, assign hat
+            scene = pyrender.Scene(
+                bg_color=[0.0, 0.0, 0.0, 0.0],
+                ambient_light=[0.35, 0.35, 0.35],
+            )
+
+            camera_yfov = 2.0 * atan(height / (2.0 * focal_length))
+            scene.add(
+                pyrender.PerspectiveCamera(
+                    yfov=camera_yfov,
+                    aspectRatio=width / height,
+                ),
+                pose=np.eye(4),
+            )
+
+            light_pose = np.eye(4)
+            light_pose[:3, 3] = [0.0, 2.0, 2.0]
+            scene.add(
+                pyrender.DirectionalLight(color=np.ones(3), intensity=2.0),
+                pose=light_pose,
+            )
+
+            cv_to_gl = np.diag([1.0, -1.0, -1.0, 1.0])
+            hats_added = 0
+            unmatched_players = list(tracked_players)
+
+            for face in faces:
+                face_pose = estimate_head_pose(
+                    face, width, height, camera_matrix
+                )
+                if face_pose is None:
+                    continue
+
+                face_x = face[1].x * width
+                face_y = face[1].y * height
+                match_index = self._match_tracked_player(
+                    face_x, face_y, unmatched_players
+                )
+                if match_index is None:
+                    continue
+
+                track_id, _ = unmatched_players.pop(match_index)
+                role = role_by_track_id.get(track_id)
+                if role not in HAT_FOR_ROLE:
+                    continue  # face isn't matched to a known Chef/Sous track: no hat to put on it
+
+                hat_index = HAT_FOR_ROLE[role]
+                matched_faces.append((face, hat_index))
+
+                hat = HATS[hat_index]
+                hat_mesh = self.hat_meshes[hat_index]
+                hat_offset = np.eye(4, dtype=np.float64)
+                hat_offset[:3, 3] = hat["offset"]
+
+                hat_pose = cv_to_gl @ face_pose @ hat_offset
+                scene.add(hat_mesh, pose=hat_pose)
+                hats_added += 1
+
+            if hats_added:
+                rendered, _ = self.renderer.render(
+                    scene,
+                    flags=pyrender.RenderFlags.RGBA,
+                )
+
+                rendered_bgr = cv2.cvtColor(
+                    rendered[:, :, :3],
+                    cv2.COLOR_RGB2BGR,
+                )
+                alpha = rendered[:, :, 3:4].astype(np.float32) / 255.0
+
+                frame = (
+                    rendered_bgr.astype(np.float32) * alpha
+                    + frame.astype(np.float32) * (1.0 - alpha)
+                ).astype(np.uint8)
+
+        for face, player_index in matched_faces:
+            reaction = self.player_reactions[player_index]
+            if reaction is not None:
+                draw_face_reaction(
+                    frame,
+                    face,
+                    reaction,
+                    self.reaction_images,
+                    width,
+                    height,
+                )
+
+        return frame
+
+    @staticmethod
+    def _match_tracked_player(face_x, face_y, tracked_players):
+        #for each tracked box, compute the normalized distance from the face to the box center
+        best_index = None
+        best_distance = float("inf")
+
+        for index, (_, bbox) in enumerate(tracked_players):
+            x1, y1, x2, y2 = bbox
+            box_width = max(x2 - x1, 1)
+            box_height = max(y2 - y1, 1)
+            center_x = (x1 + x2) / 2.0
+            center_y = (y1 + y2) / 2.0
+            distance = (
+                ((face_x - center_x) / box_width) ** 2
+                + ((face_y - center_y) / box_height) ** 2
+            )
+
+            if distance < best_distance:
+                best_index = index
+                best_distance = distance
+
+        if best_distance > 1.0:
+            return None
+        return best_index
+
+    def cycle_reaction(self, player_index):
+        current = self.player_reactions[player_index]
+        next_index = (REACTION_CYCLE.index(current) + 1) % len(REACTION_CYCLE)
+        self.player_reactions[player_index] = REACTION_CYCLE[next_index]

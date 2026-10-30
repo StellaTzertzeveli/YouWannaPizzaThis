@@ -8,7 +8,7 @@ class SpinDetector(ActionDetector):
         self.direction_count = 0
         self.count = 0
         self.speed_threshold = 0.15
-        self.max_value = 30
+        self.max_value = 2
         self.max_direction_count = 5
 
     def vector_direction(self, dx):

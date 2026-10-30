@@ -4,15 +4,15 @@ import numpy as np
 class CrossDetector(ActionDetector):
     def __init__(self):
         super().__init__()
-        self.lowest_angle = 30
-        self.highest_angle = 90 + self.lowest_angle
-        self.hold_time = 2 #Time that the player has to hold the X before the ability is used.
+        self.lowest_angle = 10  # widened from 30-120: real crossed arms rarely land in a narrow band
+        self.highest_angle = 160
+        self.hold_time = 1 #Time that the player has to hold the X before the ability is used.
         self.mp_dict = {13: 'LEFT ELBOW', 14: 'RIGHT ELBOW', 15: 'LEFT WRIST', 16: 'RIGHT WRIST'}
         self.state = False
         self.counter = 0
 
         self.cross_frames = 0 #The consecutive amount of frames where the player had the X input
-        self.max_value = 60
+        self.max_value = 30  
 
     def stop_detection(self):
         self.should_detect = False
@@ -36,13 +36,20 @@ class CrossDetector(ActionDetector):
         right_arm = right_wrist - right_elb
         angle = self.angle_between(left_arm, right_arm)
         #check the angle
+        is_crossed = False
         if self.lowest_angle < angle < self.highest_angle:
             #Horizontal buffer
             if right_wrist[0] > left_wrist[0]:
-                vertical_buffer = 0.1
+                vertical_buffer = 0.18  # was 0.1: too strict about wrists being level
                 #vertical buffer
                 if abs(right_wrist[1]-left_wrist[1]) < vertical_buffer:
-                    self.counter += 1
+                    is_crossed = True
+
+        # shortcut: without this reset, a single stray frame that happens to look X-ish (reaching,
+        # stirring, anything) would sit in self.counter forever, so scattered incidental matches
+        # across an entire session could add up to a false trigger instead of requiring a real
+        # continuous hold (same bug fixed in ThumbsupDetector).
+        self.counter = self.counter + 1 if is_crossed else 0
 
         if self.counter >= self.max_value:
             self.state = True
