@@ -7,12 +7,16 @@ from facenet_pytorch import MTCNN, InceptionResnetV1
 #classes
 from face_filters.face_class import FaceFilter
 from player import Player
+from Task_4.tracking import MP_Tracking
 
 players = [
     Player("Chef"),
     Player("Sous Chef")
 ]
+
 face_filter = FaceFilter()
+
+mp_tracker = MP_Tracking()
 
 cap = cv2.VideoCapture(0)
 fps = int(round(cap.get(5)))
@@ -39,58 +43,61 @@ mtcnn = MTCNN(
 # Face embeddings (FaceNet)
 facenet = InceptionResnetV1(pretrained="vggface2").eval().to(device)
 
-MIN_CONFIDENCE = 0.7
+MIN_CONFIDENCE = 0.9
+
+pre_ids = [0,0]
 
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
         break
 
-    detections = []
-    embeddings = []
-    img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    boxes, probs = mtcnn.detect(img)
-
-    if boxes is not None:
-        keep = probs >= MIN_CONFIDENCE
-        boxes, probs = boxes[keep], probs[keep]
-
-    if boxes is not None and len(boxes) > 0:
-        # Cropped + standardized faces, shape (N, 3, 160, 160)
-        faces = mtcnn.extract(img, boxes, save_path=None)
-
-        with torch.inference_mode():
-            embeds = facenet(faces.to(device)).cpu().numpy()
-
-        for box, confidence, embedding in zip(boxes, probs, embeds):
-            x1, y1, x2, y2 = box.tolist()
-
-            # DeepSORT expects [left, top, width, height]
-            detections.append((
-                [x1, y1, x2 - x1, y2 - y1],
-                float(confidence),
-                "Face"
-            ))
-
-            embeddings.append(embedding)
-
-    # Always update, so tracks age out while no face is visible
-    tracks = tracker.update_tracks(
-        detections,
-        embeds=embeddings
-    )
-
+    tracks = mp_tracker.get_ids(frame)
+    
     tracked_players = []
     active_track_ids = []
 
-    for track in tracks:
+    for i,track in enumerate(tracks):
         if track.time_since_update > 0:
             continue
-
+        
+        if i >= 2:
+            continue
+        
+        track_id = int(track.track_id)
         x1, y1, x2, y2 = map(int, track.to_ltrb())
-        track_id = track.track_id
+        bbox = [(x1, y1, x2, y2)]
+        
+        if players[i].id == 0:
+            players[i].id = track_id
+            players[i].bbox = bbox
+            pre_ids[i] = track_id
+            
+        if track_id != players[i].id:
+            #Locate player index
+            if pre_ids.count(track_id) > 0:
+                loc_of_id = pre_ids.index(track_id)
+                if loc_of_id != i:
+                    if loc_of_id == 1:
+                        players[0].id = track_id
+                        players[0].bbox = bbox
+                        active_track_ids.append(players[0].name)
+                        pre_ids[0] = track_id
+                    if loc_of_id == 0:
+                        players[1].id = track_id
+                        players[1].bbox = bbox
+                        active_track_ids.append(players[1].name)
+                        pre_ids[1] = track_id
+            else:
+                players[i].id = track_id
+                players[i].bbox = bbox
+                active_track_ids.append(players[i].name)
+        
+        else:
+            players[i].bbox = bbox
+            active_track_ids.append(players[i].name)
+            
         tracked_players.append((track_id, (x1, y1, x2, y2)))
-        active_track_ids.append(track_id)
 
     frame = face_filter.process_frame(frame, tracked_players, active_track_ids)
 
@@ -99,8 +106,15 @@ while cap.isOpened():
         cv2.rectangle(
             frame, (x1, y1), (x2, y2), (0, 255, 0), 2
         )
+        
+        player_index = 0
+            
+        for index, player in enumerate(players):
+            if player.id == track_id:
+                player_index = index
+        
         cv2.putText(
-            frame, f"ID {track_id}",
+            frame, f"{players[player_index].name} ID: {players[player_index].id} {players[player_index].bbox}",
             (x1, max(20, y1 - 10)),
             cv2.FONT_HERSHEY_SIMPLEX, 0.6,
             (0, 255, 0), 2

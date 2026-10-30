@@ -13,20 +13,21 @@ class MP_Tracking:
             embedder=None
         )
 
+        #sanity chack for GPU availability
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Face detector (MTCNN) - also crops faces to FaceNet's 160x160 input
+        #Bounding Box and Confidence
         self.mtcnn = MTCNN(
-            image_size=160,
+            image_size=160, #Crops to 160x160 input
             margin=20,
             keep_all=True,
             device=self.device
         )
 
-        # Face embeddings (FaceNet)
+        # Face embeddings
         self.facenet = InceptionResnetV1(pretrained="vggface2").eval().to(self.device)
         
-        self.min_confidence = 0.7
+        self.min_confidence = 0.9 #Minimum confidece for a face to be detected
         
     def get_ids(self,frame):
         detections = []

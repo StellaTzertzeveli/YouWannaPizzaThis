@@ -228,7 +228,10 @@ class FaceFilter:
         #at the start of process_frame
         if active_track_ids is not None:
             active = {str(t) for t in active_track_ids}
-            self.hat_assignments = {k: v for k, v in self.hat_assignments.items() if k in active}
+            self.hat_assignments = {k: v 
+                                    for k, v in self.hat_assignments.items() 
+                                    if k in active
+                                    }
 
         if self.renderer_size != (width, height):
             if self.renderer is not None:
