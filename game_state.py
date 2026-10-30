@@ -209,7 +209,7 @@ class GameState:
     def on_chop(self):
         item = self.items["CHOPPING COUNTER"]
         if item in INGREDIENT_NAMES:
-            self.chops += 1
+            self.chops += FRENZY_CHOPS if self.ability_active("KNIFE_FRENZY") else 1
             if self.chops >= CHOPS_NEEDED:
                 self.items["CHOPPING COUNTER"] = item + "_CHOPPED"
                 self.chops = 0
@@ -241,6 +241,18 @@ class GameState:
             self.new_order()
         self.last_used[name] = self.last_now or 0
         return True
+    
+    def rush_delivery(self):
+        if kind(self.holding) == "PIZZA_BAKED":
+            pizza, self.holding = self.holding, None
+            self.deliver(pizza)
+            return True
+        for name in SURFACES:
+            if kind(self.items[name]) == "PIZZA_BAKED":
+                pizza, self.items[name] = self.items[name], None
+                self.deliver(pizza)
+                return True
+        return False
         
     
     def toggle_timer(self):
@@ -248,29 +260,30 @@ class GameState:
 
     # Called every frame: things that happen over time, without a hand doing anything
     def update(self, now):
-        # Game timer: count down only while running
-        if self.timer_running and self.last_now is not None:
-            self.time_left = max(self.time_left - (now - self.last_now), 0)
+                # Seconds since the previous frame
+        dt = 0 if self.last_now is None else now - self.last_now
         self.last_now = now
+
+        # Game timer: count down only while running
+        if self.timer_running:
+            self.time_left = max(self.time_left - dt, 0)
 
         # Oven: bake after BAKE_TIME, burn after BURN_TIME
         pizza = self.items["OVEN"]
         if pizza is None:
-            self.oven_time = None  # oven empty: stop the clock
+            self.oven_time = 0.0  # oven empty: reset the clock
             return
-        if self.oven_time is None:
-            self.oven_time = now  # pizza just went in: start the clock
-        time_in_oven = now - self.oven_time
-        if pizza.stage == "PIZZA" and time_in_oven >= BAKE_TIME:
+        self.oven_time += dt * (HOT_OVEN_SPEED if self.ability_active("HOT_OVEN") else 1)
+        if pizza.stage == "PIZZA" and self.oven_time >= BAKE_TIME:
             pizza.stage = "PIZZA_BAKED"
-        elif pizza.stage == "PIZZA_BAKED" and time_in_oven >= BURN_TIME:
+        elif pizza.stage == "PIZZA_BAKED" and self.oven_time >= BURN_TIME:
             pizza.stage = "PIZZA_BURNT"
             
     def draw_oven_bar(self, frame, zone):
-        if self.items["OVEN"] is None or self.oven_time is None or self.last_now is None:
+        if self.items["OVEN"] is None:
             return
         h, w, _ = frame.shape
-        fill, color = oven_progress(self.last_now - self.oven_time)
+        fill, color = oven_progress(self.oven_time)
         x1, x2 = int(zone.x1 * w) + 5, int(zone.x2 * w) - 5
         y = int((zone.y1 + zone.y2) / 2 * h)
         half = max(4, int(0.015 * h))
