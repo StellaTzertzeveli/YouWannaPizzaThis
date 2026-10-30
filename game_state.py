@@ -65,12 +65,15 @@ def kind(item):
     return item
 
 
-def image_name(item, chops=0):
+def image_name(item, chops=0, spun=0):
     # Which picture shows this item, e.g. "CHEESE" with 2 chops -> "cheese_cut_2"
     if item in INGREDIENT_NAMES:
         if chops > 0:
             return f"{item.lower()}_cut_{chops}"
         return f"{item.lower()}_raw"
+    if item == "DOUGH":
+        if spun==1:
+            return f"{item.lower()}_spun"
     if item in CHOPPED_NAMES:
         return item.replace("_CHOPPED", "").lower() + "_sliced"
     return item.lower()
@@ -112,6 +115,8 @@ class GameState:
         self.items = {name: None for name in SURFACES}
         # Initialize the number of chops to 0
         self.chops = 0
+        # Initialize dough as not spun
+        self.spun = 0
         # When the pizza went into the oven (None = oven empty)
         self.oven_start = None
         # Initialize the game timer, paused until the space bar is pressed

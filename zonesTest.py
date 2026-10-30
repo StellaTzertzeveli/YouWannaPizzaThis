@@ -8,6 +8,7 @@ from zones import *
 from images import draw_fill, blend_person
 from game_state import GameState
 from motion_detectors.ChopDetector import ChopDetector
+from motion_detectors.SpinDetector import SpinDetector
 
 latest_hand_result = None
 latest_mask = None
@@ -47,6 +48,10 @@ state = GameState()
 chop_detector = ChopDetector()
 chop_detector.start_detection()
 
+# Create a spin detector here
+spin_detector = SpinDetector()
+spin_detector.start_detection()
+
 cv2.namedWindow("Zones", cv2.WINDOW_NORMAL)
 cv2.setWindowProperty("Zones", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
@@ -79,11 +84,18 @@ while cap.isOpened():
             palms.append(palm)
             cv2.circle(frame, (int(palm.x * w), int(palm.y * h)), 8, (0, 255, 0), -1)
             chop_detector.update(hand)
+            spin_detector.update(hand)
 
     # Hand every new chop to the game state, then reset the detector's count
     for _ in range(chop_detector.get_chop_count()):
         state.on_chop()
     chop_detector.reset_chop_count()
+    
+    if state.holding != "DOUGH":
+        spin_detector.count = 0
+    if spin_detector.count >= spin_detector.max_value:
+        state.on_spin()
+        spin_detector.count = 0
 
     state.update(now)
     for zone in zones:
@@ -99,8 +111,6 @@ while cap.isOpened():
     state.draw(frame, zones, palms)
     cv2.imshow("Zones", frame)
     key = cv2.waitKey(1) & 0xFF
-    if key == ord('s'):
-        state.on_spin()
     if key == ord('q'):
         break
     if key == ord(' '):

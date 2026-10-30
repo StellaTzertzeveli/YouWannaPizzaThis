@@ -1,8 +1,8 @@
 from motion_detectors.ActionDetector import ActionDetector
 import numpy as np
 class SpinDetector(ActionDetector):
-    def _init_(self):
-        super()._init_()
+    def __init__(self):
+        super().__init__()
         self.mp_dict = {0: 'wrist', 8: 'index_tip'}
         self.direction = None
         self.direction_count = 0
@@ -19,6 +19,7 @@ class SpinDetector(ActionDetector):
 
     def stop_detection(self):
         self.direction = None
+        self.direction_count = 0
         self.count = 0
 
     def update_state(self, should_print):
@@ -36,15 +37,14 @@ class SpinDetector(ActionDetector):
         if self.direction is None:
             self.direction = direction
             return
-        print(self.direction, direction)
         speed = np.linalg.norm(direction_vector)
         if speed < self.speed_threshold:
             return
         if direction == self.direction: #still going the same direction
             self.direction_count += 1
-
+        else:
+            self.direction_count = 0
         self.direction = direction
-        self.direction_count = 0
 
         if self.direction_count >= self.max_direction_count:
             return
