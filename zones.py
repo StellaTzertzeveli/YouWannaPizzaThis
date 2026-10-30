@@ -14,7 +14,7 @@ INGREDIENTS = [
 # Defines a zone, it has a name, coordinates (x1, y1) for the top-left corner and 
 # (x2, y2) for the bottom-right corner, and a color for visualization.
 class Zone:
-    def __init__(self, name, x1, y1, x2, y2, color, hold_time=1.0):
+    def __init__(self, name, x1, y1, x2, y2, color, hold_time=1.0, sprite=None):
         self.name = name
         self.x1 = x1
         self.y1 = y1
@@ -24,6 +24,7 @@ class Zone:
         self.hold_time = hold_time
         self.enter_time = None
         self.fired = False
+        self.sprite = sprite or name.lower().replace(" ", "_")  # background picture, e.g. "chopping_counter"
 
     # When a point is inbetween the coordinates of the edges of the zone, it returns true
     def contains(self, x, y):
@@ -61,48 +62,43 @@ class Zone:
         h, w, _ = frame.shape
         x1, y1 = int(self.x1 * w), int(self.y1 * h)
         x2, y2 = int(self.x2 * w), int(self.y2 * h)
-        draw_fill(frame, self.name.lower().replace(" ", "_"), x1, y1, x2, y2)  # background picture, e.g. chopping_counter.png, if there is one
+        draw_fill(frame, self.sprite, x1, y1, x2, y2)  # background picture, if there is one
         thickness = 6 if progress > 0 else 2
         cv2.rectangle(frame, (x1, y1), (x2, y2), self.color, thickness)
-                # Shrink the text until it fits inside the box
+        # Shrink the text until it fits inside the box
         font = cv2.FONT_HERSHEY_SIMPLEX
         scale = 0.7
-        while cv2.getTextSize(self.name, font, scale, 2)[0][0] > (x2 - x1) - 10 and scale > 0.3:
-            scale -= 0.05
-        cv2.putText(frame, self.name, (x1 + 5, y1 + 25), font, scale, self.color, 2)
         if progress > 0:
             bar_end = x1 + int((x2 - x1) * progress)
             cv2.rectangle(frame, (x1, y2 - 15), (bar_end, y2), self.color, -1)
             
 def make_zones():
-    # Initialize zones with their respective coordinates and colors
     zones = []
-    slot_height = (0.98-0.24)/BANK_SLOTS
+
+    # Bank: slots stacked from top to bottom in the middle, one item each
+    slot_height = (0.98 - 0.24) / BANK_SLOTS
     for i in range(BANK_SLOTS):
         top = 0.24 + i * slot_height
-        zones.append(Zone(f"BANK {i+1}", 0.45, top + 0.01, 0.55, top + slot_height - 0.01, (0, 200, 255)))
-    
-    
-    
-    # Calculate the width of each ingredient zone based on the number of ingredients, so the boxes resize based on screen size
+        zones.append(Zone(f"BANK {i + 1}", 0.45, top + 0.01, 0.55, top + slot_height - 0.01, (0, 200, 255)))
+
+    # Four ingredient boxes side by side along the top of the left half
     box_width = 0.45 / len(INGREDIENTS)
     for i, (name, color) in enumerate(INGREDIENTS):
-        # Calculate the left edge of the zone based on its index and the width of each zone
         left = i * box_width
-        # Append the new zone to the list of zones, with a small margin on the left and right edges
-        zones.append(Zone(name, left + 0.01, 0.02, left + box_width - 0.01, 0.20, color))
-    # Add the chopping counter zone to the list of zones
-    zones.append(Zone("CHOPPING COUNTER", 0.01, 0.78, 0.44, 0.98, (60, 120, 180)))
-    # App the delivery zone to the list of zones
-    zones.append(Zone("DELIVERY", 0.01, 0.28, 0.12, 0.48, (200, 80, 160)))
-    # Add the trash zone to the list of zones
-    zones.append(Zone("TRASH", 0.01, 0.53, 0.12, 0.72, (150, 150, 150)))
-    # Add the topping station and oven zones to the list of zones
-    zones.append(Zone("TOPPING STATION", 0.56, 0.78, 0.99, 0.98, (40, 80, 230)))
-    # Add the oven zone to the list of zones
+        zones.append(Zone(name, left + 0.01, 0.02, left + box_width - 0.01, 0.20, color, sprite="ingredient_box"))
+
+    # Chopping counter along the bottom of the left half
+    zones.append(Zone("CHOPPING COUNTER", 0.01, 0.72, 0.44, 0.98, (60, 120, 180)))
+
+    # Delivery stand and trash on the far left, between the ingredient boxes and the counter
+    zones.append(Zone("DELIVERY", 0.01, 0.28, 0.12, 0.48, (200, 80, 160), sprite="delivery"))
+    zones.append(Zone("TRASH", 0.01, 0.51, 0.12, 0.70, (150, 150, 150)))
+
+    # Chef's side: a mirror image of the Sous Chef's side
+    zones.append(Zone("TOPPING STATION", 0.56, 0.72, 0.99, 0.98, (40, 80, 230)))
     zones.append(Zone("OVEN", 0.88, 0.28, 0.99, 0.48, (0, 90, 255)))
-    # Add the dough zone to the list of zones
-    zones.append(Zone("DOUGH", 0.88, 0.53, 0.99, 0.72, (170, 210, 240)))
+    zones.append(Zone("DOUGH", 0.88, 0.51, 0.99, 0.70, (170, 210, 240), sprite="ingredient_box"))
+
     return zones
             
 def draw_hud(frame):
@@ -111,10 +107,7 @@ def draw_hud(frame):
     # Make art fill the recipe box
     draw_fill(frame, "recipe", int(0.58 * w), int(0.02 * h), int(0.99 * w), int(0.20 * h))
     # Recipe box above the Chef, empty for now
-    cv2.rectangle(frame, (int(0.58 * w), int(0.02 * h)), (int(0.99 * w), int(0.20 * h)),
-                  (255, 255, 255), 2)
-    cv2.putText(frame, "RECIPE", (int(0.58 * w) + 5, int(0.02 * h) + 25),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    cv2.rectangle(frame, (int(0.58 * w), int(0.02 * h)), (int(0.99 * w), int(0.20 * h)), (255, 255, 255), 2)
     # Timer above the bank, a white circle for now, to move it more to he left you have to change the x coordinate of the
     # circle center, to move it more down you have to change the y coordinate of the circle center, to make it bigger you have to change the radius of the circle
     cv2.circle(frame, (int(0.51 * w), int(0.12 * h)), int(0.07 * h), (255, 255, 255), -1)

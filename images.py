@@ -18,7 +18,7 @@ def load(name):
         if img is not None:
             if img.shape[2] == 3:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)  # no transparency in the file: make it fully solid
-            ys, xs = np.where(img[:, :, 3] > 0)  # rows and columns of every visible pixel
+            ys, xs = np.where(img[:, :, 3] > 20)  # rows and columns of every clearly visible pixel
             img = img[ys.min():ys.max() + 1, xs.min():xs.max() + 1]  # crop away the empty border
         cache[name] = img
     return cache[name]
