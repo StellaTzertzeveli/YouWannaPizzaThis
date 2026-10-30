@@ -36,6 +36,26 @@ TOPPING_OFFSETS = {
     "PEPPERS": (0.1, 0.15),
 }
 
+# Player Abillities
+
+PLAYER_ABILITIES = {
+    "SOUS": ["KNIFE_FRENZY", "RUSH_DELIVERY"],
+    "CHEF": ["HOT_OVEN", "STUBBORN"],
+}
+
+ABILITY_COOLDOWN = {
+    "KNIFE_FRENZY": 10,
+    "RUSH_DELIVERY": 20,
+    "HOT_OVEN": 10,
+    "STUBBORN": 20,
+}
+
+# Hot Oven and Knife Frenzy
+ABILITY_DURATION = 5
+
+FRENZY_CHOPS = 2
+HOT_OVEN_SPEED = 2
+
 # Game Time
 GAME_TIME = 90
 
@@ -117,8 +137,10 @@ class GameState:
         self.chops = 0
         # Initialize dough as not spun
         self.spun = 0
-        # When the pizza went into the oven (None = oven empty)
-        self.oven_start = None
+        # How long the pizza has been in the oven (0 = oven empty)
+        self.oven_time = 0.0
+        # When each ability was last used (None = never), for cooldowns and durations
+        self.last_used = {name: None for name in ABILITY_COOLDOWN}
         # Initialize the game timer, paused until the space bar is pressed
         self.time_left = GAME_TIME
         self.timer_running = False
@@ -126,7 +148,8 @@ class GameState:
         # Initialize the order list and pick the first recipe
         self.order = []
         self.new_order()
-
+        
+        
     def new_order(self):
         amount = random.randint(1, 3)
         self.order = random.sample(INGREDIENT_NAMES, amount)
@@ -196,6 +219,30 @@ class GameState:
         if self.holding == "DOUGH":
             self.holding = "DOUGH_SPUN"
 
+    # Seeing if the ability cooldown is over
+    def ability_ready(self, name):
+        last = self.last_used[name]
+        return last is None and (self.last_now or 0) - last >= ABILITY_COOLDOWN[name]
+    
+    # While the activity is active
+    def ability_active(self, name):
+        last = self.last_used[name]
+        return last is not None and (self.last_now or 0) - last < ABILITY_COOLDOWN[name]
+    
+    
+    def on_ability(self, player, number):
+        name = PLAYER_ABILITIES[player][number-1]
+        if not self.ability_ready(name):
+            return False
+        if name == "RUSH_DELIVERY":
+            if not self.rush_delivery():
+                return False
+        if name == "STUBBORN":
+            self.new_order()
+        self.last_used[name] = self.last_now or 0
+        return True
+        
+    
     def toggle_timer(self):
         self.timer_running = not self.timer_running
 
@@ -209,21 +256,21 @@ class GameState:
         # Oven: bake after BAKE_TIME, burn after BURN_TIME
         pizza = self.items["OVEN"]
         if pizza is None:
-            self.oven_start = None  # oven empty: stop the clock
+            self.oven_time = None  # oven empty: stop the clock
             return
-        if self.oven_start is None:
-            self.oven_start = now  # pizza just went in: start the clock
-        time_in_oven = now - self.oven_start
+        if self.oven_time is None:
+            self.oven_time = now  # pizza just went in: start the clock
+        time_in_oven = now - self.oven_time
         if pizza.stage == "PIZZA" and time_in_oven >= BAKE_TIME:
             pizza.stage = "PIZZA_BAKED"
         elif pizza.stage == "PIZZA_BAKED" and time_in_oven >= BURN_TIME:
             pizza.stage = "PIZZA_BURNT"
             
     def draw_oven_bar(self, frame, zone):
-        if self.items["OVEN"] is None or self.oven_start is None or self.last_now is None:
+        if self.items["OVEN"] is None or self.oven_time is None or self.last_now is None:
             return
         h, w, _ = frame.shape
-        fill, color = oven_progress(self.last_now - self.oven_start)
+        fill, color = oven_progress(self.last_now - self.oven_time)
         x1, x2 = int(zone.x1 * w) + 5, int(zone.x2 * w) - 5
         y = int((zone.y1 + zone.y2) / 2 * h)
         half = max(4, int(0.015 * h))
